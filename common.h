@@ -12,6 +12,7 @@
 using namespace std;
 
 #define PORT "36547"
+#define MAXDATASIZE 100
 
 void* get_in_addr(struct sockaddr* sa)
 {

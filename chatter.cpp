@@ -1,7 +1,5 @@
 #include "common.h"
 
-#define MAXDATASIZE 100
-
 int main(int argc, char *argv[])
 {
     int sockfd, bufferSize;

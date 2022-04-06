@@ -11,18 +11,16 @@ cmake ..
 make
 ```
 
-## Run
-
-### Server
+## Run Server
 
 ```
 ./chatter-server
 ```
 
-### Client
+## Connect
 
 ```
-./chatter <server address>
+telnet <server IP> <port>
 ```
 
 ## LICENSE
