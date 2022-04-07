@@ -1,3 +1,6 @@
+#ifndef _COMMON_H
+#define _COMMON_H
+
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstdlib>
@@ -14,11 +17,6 @@ using namespace std;
 #define PORT "36547"
 #define MAXDATASIZE 100
 
-void* get_in_addr(struct sockaddr* sa)
-{
-    if (sa->sa_family == AF_INET)
-    {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
+void* get_in_addr(struct sockaddr* sa);
+
+#endif
