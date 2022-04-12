@@ -1,9 +1,6 @@
 #include "server.h"
 
 vector<char> msg_buffer(MAXDATASIZE);
-char addr_buffer[INET6_ADDRSTRLEN];
-struct sockaddr_storage client_addr;
-socklen_t addr_size = sizeof client_addr;
 
 int Server::makeConnection()
 {
@@ -84,15 +81,14 @@ void Server::pollClients()
             {
                 memset(&msg_buffer[0], 0, MAXDATASIZE);
                 int nbytes = recv(client, &msg_buffer[0], msg_buffer.size(), 0);
-                getpeername(client, (struct sockaddr*)&client_addr, &addr_size);
                 if (nbytes <= 0)
-                {
+                { // client disconnect
                     if (nbytes == 0)
                     {
-                        inet_ntop(client_addr.ss_family,
-                            get_in_addr((struct sockaddr*)&client_addr),
-                            addr_buffer, sizeof addr_buffer);
-                        printf("Disconnected %s from socket %d\n", addr_buffer, client);
+                        string client_name = getClientName(client);
+                        printf("Disconnected %s from socket %d\n", client_name.c_str(), client);
+                        client_name += " has disconnected.\n";
+                        broadCastMsg(client, client_name);
                     }
                     else
                     {
@@ -103,30 +99,17 @@ void Server::pollClients()
                     continue;
                 }
                 else
-                {
+                { // client message
                     if (msg_buffer[0] != '\r' && msg_buffer[0] != '\n')
                     { // ignore empty messages
-                        inet_ntop(client_addr.ss_family,
-                            get_in_addr((struct sockaddr*)&client_addr),
-                            addr_buffer, sizeof addr_buffer);
-                        string sendStr = makeSendString(addr_buffer, msg_buffer);
-                        while (sendStr.back() != '\0')
+                        string send_str = makeSendString(getClientName(client), msg_buffer);
+                        while (send_str.back() != '\0')
                         { // get whole message
                             memset(&msg_buffer[0], 0, MAXDATASIZE);
                             recv(client, &msg_buffer[0], msg_buffer.size(), 0);
-                            sendStr.append(msg_buffer.cbegin(), msg_buffer.cend());
+                            send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
                         }
-                        for (auto itr2 = clients.begin(); itr2 != clients.end(); itr2++)
-                        { // send to clients
-                            int dest = itr2->fd;
-                            if (dest != client && dest != server)
-                            { // except sender and server
-                                if (send(dest, sendStr.c_str(), sendStr.size(), 0) == -1)
-                                {
-                                    perror("send");
-                                }
-                            }
-                        }
+                        broadCastMsg(client, send_str);
                     }
                 }
             }
@@ -137,6 +120,8 @@ void Server::pollClients()
 
 void Server::connectClient()
 {
+    struct sockaddr_storage client_addr;
+    socklen_t addr_size = sizeof client_addr;
     int client = accept(server, (struct sockaddr*)&client_addr, &addr_size);
     if (client == -1)
     {
@@ -145,17 +130,43 @@ void Server::connectClient()
     else
     {
         clients.push_back({client, POLLIN, 0});
-        inet_ntop(client_addr.ss_family,
-            get_in_addr((struct sockaddr*)&client_addr),
-            addr_buffer, sizeof addr_buffer);
-        printf("New connection from %s on socket %d\n", addr_buffer, client);
+        string client_name = getClientName(client);
+        printf("New connection from %s on socket %d\n", client_name.c_str(), client);
+        client_name += " has connected.\n";
+        broadCastMsg(client, client_name);
     }
 }
 
-string Server::makeSendString(const char* addr, vector<char>& buffer)
+string Server::makeSendString(string addr, vector<char>& buffer)
 {
-    string ret(addr);
-    ret.append("> ");
-    ret.append(buffer.cbegin(), buffer.cend());
-    return ret;
+    addr += "> ";
+    addr.append(buffer.cbegin(), buffer.cend());
+    return addr;
+}
+
+string Server::getClientName(int client)
+{
+    char addr_buffer[INET6_ADDRSTRLEN];
+    struct sockaddr_storage client_addr;
+    socklen_t addr_size = sizeof client_addr;
+    getpeername(client, (struct sockaddr*)&client_addr, &addr_size);
+    inet_ntop(client_addr.ss_family,
+        get_in_addr((struct sockaddr*)&client_addr),
+        addr_buffer, sizeof addr_buffer);
+    return string(addr_buffer);
+}
+
+void Server::broadCastMsg(int sender, string msg)
+{
+    for (auto itr2 = clients.begin(); itr2 != clients.end(); itr2++)
+    { // send to clients
+        int dest = itr2->fd;
+        if (dest != sender && dest != server)
+        { // except sender and server
+            if (send(dest, msg.c_str(), msg.size(), 0) == -1)
+            {
+                perror("send");
+            }
+        }
+    }
 }

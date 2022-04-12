@@ -13,7 +13,9 @@ class Server
         int makeConnection();
         void pollClients();
         void connectClient();
-        string makeSendString(const char* addr, vector<char>& buffer);
+        string makeSendString(string addr, vector<char>& buffer);
+        string getClientName(int client);
+        void broadCastMsg(int sender, string msg);
     private:
         int server;
         vector<pollfd> clients;
