@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "server.h"
 
 int main()
@@ -5,7 +7,7 @@ int main()
     Server chatter;
     chatter.makeConnection();
 
-    cout << "Waiting for clients...\n";
+    std::cout << "Waiting for clients...\n";
 
     while (true)
     {

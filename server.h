@@ -1,9 +1,14 @@
 #ifndef _SERVER_H
 #define _SERVER_H
 
-#include <poll.h>
+#include <string>
+#include <unordered_map>
 #include <vector>
-#include "common.h"
+
+#include <poll.h>
+
+#include "client.h"
+#include "room.h"
 
 #define BACKLOG 10
 
@@ -11,14 +16,17 @@ class Server
 {
     public:
         int makeConnection();
-        void pollClients();
+        void addRoom(std::string name);
+        void addClientToRoom(std::string room, Client client);
         void connectClient();
-        string makeSendString(string addr, vector<char>& buffer);
-        string getClientName(int client);
-        void broadCastMsg(int sender, string msg);
+        void pollClients();
+        std::string getClientName(int client);
+        std::string makeSendString(Client client, std::vector<char>& buffer);
     private:
         int server;
-        vector<pollfd> clients;
+        std::vector<pollfd> client_pfds;
+        std::unordered_map<int, Client> clients;
+        std::unordered_map<std::string, Room> rooms;
 };
 
 #endif

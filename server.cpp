@@ -1,10 +1,21 @@
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include "common.h"
 #include "server.h"
 
-vector<char> msg_buffer(MAXDATASIZE);
+std::vector<char> msg_buffer(MAXDATASIZE);
 
 int Server::makeConnection()
 {
-    struct addrinfo hints, *servinfo, *p;
+    addrinfo hints, *servinfo, *p;
     int ret;
     int yes = 1;
 
@@ -54,62 +65,101 @@ int Server::makeConnection()
         exit(1);
     }
 
-    clients.push_back({server, POLLIN, 0});
+    addRoom("global");
+    client_pfds.push_back({server, POLLIN, 0});
 
     return 0;
 }
 
+void Server::addRoom(std::string name)
+{
+    if (rooms.find(name) != rooms.end())
+    {
+        Room room(name);
+        rooms[name] = room;
+    }
+}
+
+void Server::addClientToRoom(std::string room, Client client)
+{
+    if (client.room != room)
+    {
+        rooms[client.room].removeClient(client);
+    }
+    rooms[room].addClient(client);
+}
+
+void Server::connectClient()
+{
+    sockaddr_storage client_addr;
+    socklen_t addr_size = sizeof client_addr;
+    int client_fd = accept(server, (sockaddr*)&client_addr, &addr_size);
+    if (client_fd == -1)
+    {
+        perror("chatter-server: accept");
+    }
+    else
+    {
+        Client client;
+        client.fd = client_fd;
+        client.addr = getClientName(client_fd);
+        clients[client_fd] = client;
+        addClientToRoom("global", client);
+        client_pfds.push_back({client_fd, POLLIN, 0});
+        printf("New connection from %s on socket %d\n", client.addr.c_str(), client_fd);
+    }
+}
+
 void Server::pollClients()
 {
-    int poll_count = poll(&clients[0], (nfds_t)clients.size(), -1);
+    int poll_count = poll(&client_pfds[0], (nfds_t)client_pfds.size(), -1);
     if (poll_count == -1)
     {
         perror("poll");
         exit(1);
     }
 
-    for (int i = 0; i < clients.size();)
+    for (int i = 0; i < client_pfds.size();)
     {
-        if (clients[i].revents & POLLIN)
+        if (client_pfds[i].revents & POLLIN)
         {
-            int client = clients[i].fd;
-            if (client == server)
+            int client_fd = client_pfds[i].fd;
+            if (client_fd == server)
             {
                 connectClient();
             }
             else
             {
                 memset(&msg_buffer[0], 0, MAXDATASIZE);
-                int nbytes = recv(client, &msg_buffer[0], msg_buffer.size(), 0);
+                int nbytes = recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
                 if (nbytes <= 0)
                 { // client disconnect
                     if (nbytes == 0)
                     {
-                        string client_name = getClientName(client);
-                        printf("Disconnected %s from socket %d\n", client_name.c_str(), client);
-                        client_name += " has disconnected.\n";
-                        broadCastMsg(client, client_name);
+                        printf("Disconnected %s from socket %d\n", clients[client_fd].addr.c_str(), client_fd);
                     }
                     else
                     {
                         perror("recv");
                     }
-                    close(client);
-                    clients.erase(clients.begin() + i);
+                    close(client_fd);
+                    rooms[clients[client_fd].room].removeClient(clients[client_fd]);
+                    client_pfds.erase(client_pfds.begin() + i);
+                    clients.erase(client_fd);
                     continue;
                 }
                 else
                 { // client message
-                    if (msg_buffer[0] != '\r' && msg_buffer[0] != '\n')
+                    if (msg_buffer[0] > 31)
                     { // ignore empty messages
-                        string send_str = makeSendString(getClientName(client), msg_buffer);
+                        std::string send_str = makeSendString(clients[client_fd], msg_buffer);
                         while (send_str.back() != '\0')
                         { // get whole message
                             memset(&msg_buffer[0], 0, MAXDATASIZE);
-                            recv(client, &msg_buffer[0], msg_buffer.size(), 0);
+                            recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
                             send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
                         }
-                        broadCastMsg(client, send_str);
+                        rooms[clients[client_fd].room].broadCastMsg(client_fd, send_str);
                     }
                 }
             }
@@ -118,55 +168,21 @@ void Server::pollClients()
     }
 }
 
-void Server::connectClient()
-{
-    struct sockaddr_storage client_addr;
-    socklen_t addr_size = sizeof client_addr;
-    int client = accept(server, (struct sockaddr*)&client_addr, &addr_size);
-    if (client == -1)
-    {
-        perror("chatter-server: accept");
-    }
-    else
-    {
-        clients.push_back({client, POLLIN, 0});
-        string client_name = getClientName(client);
-        printf("New connection from %s on socket %d\n", client_name.c_str(), client);
-        client_name += " has connected.\n";
-        broadCastMsg(client, client_name);
-    }
-}
-
-string Server::makeSendString(string addr, vector<char>& buffer)
-{
-    addr += "> ";
-    addr.append(buffer.cbegin(), buffer.cend());
-    return addr;
-}
-
-string Server::getClientName(int client)
+std::string Server::getClientName(int client)
 {
     char addr_buffer[INET6_ADDRSTRLEN];
-    struct sockaddr_storage client_addr;
+    sockaddr_storage client_addr;
     socklen_t addr_size = sizeof client_addr;
-    getpeername(client, (struct sockaddr*)&client_addr, &addr_size);
+    getpeername(client, (sockaddr*)&client_addr, &addr_size);
     inet_ntop(client_addr.ss_family,
-        get_in_addr((struct sockaddr*)&client_addr),
+        get_in_addr((sockaddr*)&client_addr),
         addr_buffer, sizeof addr_buffer);
-    return string(addr_buffer);
+    return std::string(addr_buffer);
 }
 
-void Server::broadCastMsg(int sender, string msg)
+std::string Server::makeSendString(Client client, std::vector<char>& buffer)
 {
-    for (auto itr2 = clients.begin(); itr2 != clients.end(); itr2++)
-    { // send to clients
-        int dest = itr2->fd;
-        if (dest != sender && dest != server)
-        { // except sender and server
-            if (send(dest, msg.c_str(), msg.size(), 0) == -1)
-            {
-                perror("send");
-            }
-        }
-    }
+    std::string ret = client.name + "@" + client.addr + "> ";
+    ret.append(buffer.cbegin(), buffer.cend());
+    return ret;
 }
