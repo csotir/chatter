@@ -10,10 +10,11 @@ class Room
 {
     public:
         Room() = default;
-        Room(std::string room_name);
-        void addClient(Client client);
-        void removeClient(Client client);
-        void broadCastMsg(int sender, std::string msg);
+        Room(const std::string& room_name);
+        void addClient(const Client& client);
+        void removeClient(const Client& client);
+        void broadCastMsg(int sender, const std::string& msg);
+        const std::unordered_set<int>& getClients() { return clients; }
     private:
         std::string name;
         std::unordered_set<int> clients;

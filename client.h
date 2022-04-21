@@ -6,7 +6,7 @@
 struct Client
 {
     int fd;
-    std::string name = "Anon";
+    std::string name = "anon";
     std::string addr;
     std::string room = "global";
 };
