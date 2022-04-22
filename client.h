@@ -8,7 +8,7 @@ struct Client
     int fd;
     std::string name = "anon";
     std::string addr;
-    std::string room = "global";
+    std::string room;
 };
 
 #endif

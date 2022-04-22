@@ -12,16 +12,20 @@
 
 #define BACKLOG 10
 
-enum Command
+enum class Command
 {
     NAME,
     WHO,
+    JOIN,
+    LEAVE,
 };
 
 const std::unordered_map<std::string, Command> commands
 {
-    {"name", NAME},
-    {"who", WHO},
+    {"name", Command::NAME},
+    {"who", Command::WHO},
+    {"join", Command::JOIN},
+    {"leave", Command::LEAVE},
 };
 
 class Server
@@ -32,9 +36,9 @@ class Server
         void addClientToRoom(const std::string& room, Client& client);
         void connectClient();
         void pollClients();
-        std::string getClientName(int client);
-        void parseCommand(Client& client, std::string& command);
+        std::string getClientAddr(int client);
         void sendToClient(const Client& client, const std::string& message);
+        void parseCommand(Client& client, std::string& command);
     private:
         int server;
         std::vector<pollfd> client_pfds;
