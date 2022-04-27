@@ -1,7 +1,4 @@
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <stdexcept>
+#include "server.h"
 
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -9,12 +6,17 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
 #include "common.h"
-#include "server.h"
 
-std::vector<char> msg_buffer(MAXDATASIZE);
+namespace chatter {
 
-int Server::makeConnection()
+static std::vector<char> msg_buffer(MAXDATASIZE);
+
+int Server::MakeConnection()
 {
     addrinfo hints, *servinfo, *p;
     int ret;
@@ -33,19 +35,19 @@ int Server::makeConnection()
 
     for (p = servinfo; p != NULL; p = p->ai_next)
     {
-        if ((server = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        if ((server_fd_ = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         {
             perror("chatter-server: socket");
             continue;
         }
-        if (setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
         {
             perror("setsockopt");
             exit(1);
         }
-        if (bind(server, p->ai_addr, p->ai_addrlen) == -1)
+        if (bind(server_fd_, p->ai_addr, p->ai_addrlen) == -1)
         {
-            close(server);
+            close(server_fd_);
             perror("chatter-server: bind");
             continue;
         }
@@ -60,47 +62,47 @@ int Server::makeConnection()
         exit(1);
     }
 
-    if (listen(server, BACKLOG) == -1)
+    if (listen(server_fd_, BACKLOG) == -1)
     {
         perror("chatter-server: listen");
         exit(1);
     }
 
-    addRoom("global");
-    client_pfds.push_back({server, POLLIN, 0});
+    AddRoom("global");
+    client_pfds_.push_back({server_fd_, POLLIN, 0});
 
     return 0;
 }
 
-void Server::addRoom(const std::string& name)
+void Server::AddRoom(const std::string& name)
 {
-    if (rooms.find(name) == rooms.end())
+    if (rooms_.find(name) == rooms_.end())
     {
         Room room(name);
-        rooms[name] = room;
+        rooms_[name] = room;
     }
 }
 
-void Server::addClientToRoom(const std::string& room, Client& client)
+void Server::AddClientToRoom(const std::string& room, Client& client)
 {
     if (client.room != room)
     {
         if (client.room != "")
         {
-            sendToClient(client, "Leaving room: " + client.room + "\r\n");
-            rooms[client.room].removeClient(client);
+            SendToClient(client, "Leaving room: " + client.room + "\r\n");
+            rooms_[client.room].RemoveClient(client);
         }
-        rooms[room].addClient(client);
+        rooms_[room].AddClient(client);
         client.room = room;
-        sendToClient(client, "Joined room: " + room + "\r\n");
+        SendToClient(client, "Joined room: " + room + "\r\n");
     }
 }
 
-void Server::connectClient()
+void Server::ConnectClient()
 {
     sockaddr_storage client_addr;
     socklen_t addr_size = sizeof client_addr;
-    int client_fd = accept(server, (sockaddr*)&client_addr, &addr_size);
+    int client_fd = accept(server_fd_, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
     if (client_fd == -1)
     {
         perror("chatter-server: accept");
@@ -109,101 +111,114 @@ void Server::connectClient()
     {
         Client client;
         client.fd = client_fd;
-        client.addr = getClientAddr(client_fd);
-        addClientToRoom("global", client);
-        clients[client_fd] = client;
-        client_pfds.push_back({client_fd, POLLIN, 0});
+        client.addr = GetClientAddr(client_fd);
+        AddClientToRoom("global", client);
+        clients_[client_fd] = client;
+        client_pfds_.push_back({client_fd, POLLIN, 0});
         printf("New connection from %s on socket %d\r\n", client.addr.c_str(), client_fd);
     }
 }
 
-void Server::pollClients()
+void Server::DisconnectClient(int client_fd, int index, bool orderly)
 {
-    int poll_count = poll(&client_pfds[0], (nfds_t)client_pfds.size(), -1);
+    if (orderly)
+    {
+        printf("Disconnected %s from socket %d\r\n", clients_[client_fd].addr.c_str(), client_fd);
+    }
+    else
+    {
+        perror("recv");
+    }
+    close(client_fd);
+    rooms_[clients_[client_fd].room].RemoveClient(clients_[client_fd]);
+    client_pfds_.erase(client_pfds_.begin() + index);
+    clients_.erase(client_fd);
+}
+
+void Server::PollClients()
+{
+    int poll_count = poll(&client_pfds_[0], static_cast<nfds_t>(client_pfds_.size()), -1);
     if (poll_count == -1)
     {
         perror("poll");
         exit(1);
     }
 
-    for (int i = 0; i < client_pfds.size();)
+    for (int i = 0; i < client_pfds_.size();)
     {
-        if (client_pfds[i].revents & POLLIN)
+        if (client_pfds_[i].revents & POLLIN)
         {
-            int client_fd = client_pfds[i].fd;
-            if (client_fd == server)
+            int client_fd = client_pfds_[i].fd;
+            if (client_fd == server_fd_)
             {
-                connectClient();
+                ConnectClient();
             }
             else
             {
-                memset(&msg_buffer[0], 0, MAXDATASIZE);
-                int nbytes = recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
+                int nbytes = ReceiveMessage(client_fd);
                 if (nbytes <= 0)
-                { // client disconnect
-                    if (nbytes == 0)
-                    {
-                        printf("Disconnected %s from socket %d\r\n", clients[client_fd].addr.c_str(), client_fd);
-                    }
-                    else
-                    {
-                        perror("recv");
-                    }
-                    close(client_fd);
-                    rooms[clients[client_fd].room].removeClient(clients[client_fd]);
-                    client_pfds.erase(client_pfds.begin() + i);
-                    clients.erase(client_fd);
+                {
+                    DisconnectClient(client_fd, i, nbytes == 0);
                     continue;
                 }
                 else
-                { // client message
-                    if (msg_buffer[0] > 31)
-                    { // ignore empty messages
-                        std::string send_str(msg_buffer.cbegin(), msg_buffer.cend());
-                        // TODO: probably set socket to nonblocking and loop on recv ret > 0 instead
-                        while (send_str.back() != '\0' && send_str.back() != '\n')
-                        { // get whole message
-                            memset(&msg_buffer[0], 0, MAXDATASIZE);
-                            recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
-                            send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
-                        }
-                        if (send_str[0] != '/')
-                        { // sign and send message
-                            send_str.insert(0, clients[client_fd].name + "@" + clients[client_fd].addr + "> ");
-                            send_str = send_str.c_str(); // trim null chars
-                            if (send_str.find("\r\n", send_str.size() - 2) == std::string::npos)
-                            { // add newline
-                                send_str.append("\r\n");
-                            }
-                            rooms[clients[client_fd].room].broadCastMsg(client_fd, send_str);
-                        }
-                        else
-                        { // parse command
-                            send_str = send_str.substr(1, std::string::npos);
-                            parseCommand(clients[client_fd], send_str);
-                        }
-                        
-                    }
+                {
+                    HandleMessage(client_fd);
                 }
             }
         }
-        i++;
+        ++i;
     }
 }
 
-std::string Server::getClientAddr(int client)
+std::string Server::GetClientAddr(int client_fd)
 {
     char addr_buffer[INET6_ADDRSTRLEN];
     sockaddr_storage client_addr;
     socklen_t addr_size = sizeof client_addr;
-    getpeername(client, (sockaddr*)&client_addr, &addr_size);
+    getpeername(client_fd, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
     inet_ntop(client_addr.ss_family,
-        get_in_addr((sockaddr*)&client_addr),
+        get_in_addr(reinterpret_cast<sockaddr*>(&client_addr)),
         addr_buffer, sizeof addr_buffer);
     return std::string(addr_buffer);
 }
 
-void Server::sendToClient(const Client& client, const std::string& message)
+int Server::ReceiveMessage(int client_fd)
+{
+    memset(&msg_buffer[0], 0, MAXDATASIZE);
+    return recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
+}
+
+void Server::HandleMessage(int client_fd)
+{
+    if (msg_buffer[0] > 31)
+    { // ignore empty messages
+        std::string send_str(msg_buffer.cbegin(), msg_buffer.cend());
+        // TODO: probably set socket to nonblocking and loop on recv ret > 0 instead
+        while (send_str.back() != '\0' && send_str.back() != '\n')
+        { // get whole message
+            ReceiveMessage(client_fd);
+            send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
+        }
+        if (send_str[0] != '/')
+        { // sign and send message
+            send_str.insert(0, clients_[client_fd].name + "@" + clients_[client_fd].addr + "> ");
+            send_str = send_str.c_str(); // trim null chars
+            if (send_str.find("\r\n", send_str.size() - 2) == std::string::npos)
+            {
+                send_str.append("\r\n");
+            }
+            rooms_[clients_[client_fd].room].BroadCastMsg(client_fd, send_str);
+        }
+        else
+        {
+            send_str = send_str.substr(1, std::string::npos);
+            ParseCommand(clients_[client_fd], send_str);
+        }
+    }
+}
+
+void Server::SendToClient(const Client& client, const std::string& message)
 {
     if (send(client.fd, message.c_str(), message.size(), 0) == -1)
     {
@@ -211,7 +226,7 @@ void Server::sendToClient(const Client& client, const std::string& message)
     }
 }
 
-void Server::parseCommand(Client& client, std::string& command)
+void Server::ParseCommand(Client& client, std::string& command)
 {
     // TODO: only clean/tokenize the first word at this point, for direct message support
     std::vector<std::string> tokens;
@@ -224,11 +239,11 @@ void Server::parseCommand(Client& client, std::string& command)
         }
         if (!isalnum(command[i]) && command[i] != ' ')
         {
-            sendToClient(client, "Invalid command.\r\n");
+            SendToClient(client, "Invalid command.\r\n");
             return;
         }
         command[i] = tolower(command[i]);
-        i++;
+        ++i;
     }
     int pos = 0;
     while ((pos = command.find(' ')) != std::string::npos)
@@ -254,46 +269,48 @@ void Server::parseCommand(Client& client, std::string& command)
                 if (tokens.size() > 1)
                 {
                     client.name = tokens[1];
-                    sendToClient(client, "Your new name is " + client.name + "!\r\n");
+                    SendToClient(client, "Your new name is " + client.name + "!\r\n");
                 }
                 else
                 {
-                    sendToClient(client, "Please specify a new name.\r\n");
+                    SendToClient(client, "Please specify a new name.\r\n");
                 }
                 break;
             }
             case Command::WHO:
             {
                 std::string out = "Members in current room (" + client.room + "):\r\n";
-                for (auto member : rooms[client.room].getClients())
+                for (auto member : rooms_[client.room].GetClients())
                 {
-                    out += clients[member].name + '@' + clients[member].addr + "\r\n";
+                    out += clients_[member].name + '@' + clients_[member].addr + "\r\n";
                 }
-                sendToClient(client, out);
+                SendToClient(client, out);
                 break;
             }
             case Command::JOIN:
             {
                 if (tokens.size() > 1)
                 {
-                    addRoom(tokens[1]);
-                    addClientToRoom(tokens[1], client);
+                    AddRoom(tokens[1]);
+                    AddClientToRoom(tokens[1], client);
                 }
                 else
                 {
-                    sendToClient(client, "Please specify a room to join.\r\n");
+                    SendToClient(client, "Please specify a room to join.\r\n");
                 }
                 break;
             }
             case Command::LEAVE:
             {
-                addClientToRoom("global", client);
+                AddClientToRoom("global", client);
                 break;
             }
         }
     }
     else
     {
-        sendToClient(client, "Unknown command.\r\n");
+        SendToClient(client, "Unknown command.\r\n");
     }
 }
+
+} // namespace chatter

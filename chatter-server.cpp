@@ -4,14 +4,14 @@
 
 int main()
 {
-    Server chatter;
-    chatter.makeConnection();
+    chatter::Server chatter;
+    chatter.MakeConnection();
 
     std::cout << "Waiting for clients...\n";
 
     while (true)
     {
-        chatter.pollClients();
+        chatter.PollClients();
     }
 
     return 0;

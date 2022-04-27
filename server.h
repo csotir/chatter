@@ -1,14 +1,16 @@
-#ifndef _SERVER_H
-#define _SERVER_H
+#ifndef CHATTER_SERVER_H_
+#define CHATTER_SERVER_H_
+
+#include <poll.h>
 
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <poll.h>
-
 #include "client.h"
 #include "room.h"
+
+namespace chatter {
 
 #define BACKLOG 10
 
@@ -31,19 +33,24 @@ const std::unordered_map<std::string, Command> commands
 class Server
 {
     public:
-        int makeConnection();
-        void addRoom(const std::string& name);
-        void addClientToRoom(const std::string& room, Client& client);
-        void connectClient();
-        void pollClients();
-        std::string getClientAddr(int client);
-        void sendToClient(const Client& client, const std::string& message);
-        void parseCommand(Client& client, std::string& command);
+        int MakeConnection();
+        void AddRoom(const std::string& name);
+        void AddClientToRoom(const std::string& room, Client& client);
+        void ConnectClient();
+        void DisconnectClient(int client_fd, int index, bool orderly);
+        void PollClients();
+        std::string GetClientAddr(int client_fd);
+        int ReceiveMessage(int client_fd);
+        void HandleMessage(int client_fd);
+        void SendToClient(const Client& client, const std::string& message);
+        void ParseCommand(Client& client, std::string& command);
     private:
-        int server;
-        std::vector<pollfd> client_pfds;
-        std::unordered_map<int, Client> clients;
-        std::unordered_map<std::string, Room> rooms;
+        int server_fd_;
+        std::vector<pollfd> client_pfds_;
+        std::unordered_map<int, Client> clients_;
+        std::unordered_map<std::string, Room> rooms_;
 };
 
-#endif
+} // namespace chatter
+
+#endif // CHATTER_SERVER_H_

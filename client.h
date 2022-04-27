@@ -1,7 +1,9 @@
-#ifndef _CLIENT_H
-#define _CLIENT_H
+#ifndef CHATTER_CLIENT_H_
+#define CHATTER_CLIENT_H_
 
 #include <string>
+
+namespace chatter {
 
 struct Client
 {
@@ -11,4 +13,6 @@ struct Client
     std::string room;
 };
 
-#endif
+} // namespace chatter
+
+#endif // CHATTER_CLIENT_H_

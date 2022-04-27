@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
         return 2;
     }
 
-    inet_ntop(p->ai_family, get_in_addr(p->ai_addr), str, sizeof str);
+    inet_ntop(p->ai_family, chatter::get_in_addr(p->ai_addr), str, sizeof str);
     printf("chatter: connecting to %s\n", str);
 
     freeaddrinfo(servinfo);

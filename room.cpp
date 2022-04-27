@@ -1,35 +1,39 @@
-#include <cstdio>
+#include "room.h"
 
 #include <sys/socket.h>
 
-#include "room.h"
+#include <cstdio>
 
-Room::Room(const std::string& room_name) : name(room_name) { }
+namespace chatter {
 
-void Room::addClient(const Client& client)
+Room::Room(const std::string& room_name) : name_(room_name) { }
+
+void Room::AddClient(const Client& client)
 {
-    clients.insert(client.fd);
+    client_fds_.insert(client.fd);
     std::string msg = client.name + "@" + client.addr + " has joined the room!\r\n";
-    broadCastMsg(client.fd, msg);
+    BroadCastMsg(client.fd, msg);
 }
 
-void Room::removeClient(const Client& client)
+void Room::RemoveClient(const Client& client)
 {
-    clients.erase(client.fd);
+    client_fds_.erase(client.fd);
     std::string msg = client.name + "@" + client.addr + " has left the room!\r\n";
-    broadCastMsg(client.fd, msg);
+    BroadCastMsg(client.fd, msg);
 }
 
-void Room::broadCastMsg(int sender, const std::string& msg)
+void Room::BroadCastMsg(int sender_fd, const std::string& msg)
 {
-    for (auto dest : clients)
-    { // send to clients
-        if (dest != sender)
-        { // except sender
-            if (send(dest, msg.c_str(), msg.size(), 0) == -1)
+    for (auto dest_fd : client_fds_)
+    {
+        if (dest_fd != sender_fd)
+        {
+            if (send(dest_fd, msg.c_str(), msg.size(), 0) == -1)
             {
                 perror("send");
             }
         }
     }
 }
+
+} // namespace chatter
