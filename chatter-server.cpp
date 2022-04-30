@@ -1,13 +1,19 @@
-#include <iostream>
+#include <cstdio>
 
 #include "server.h"
 
-int main()
+int main(int argc, char* argv[])
 {
-    chatter::Server chatter;
-    chatter.MakeConnection();
+    if (argc != 2)
+    {
+        fprintf(stderr, "usage: chatter-server <port>\r\n");
+        return 1;
+    }
 
-    std::cout << "Waiting for clients...\n";
+    chatter::Server chatter;
+    chatter.MakeConnection(argv[1]);
+
+    printf("Waiting for clients...\r\n");
 
     while (true)
     {

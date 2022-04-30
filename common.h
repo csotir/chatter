@@ -5,8 +5,7 @@
 
 namespace chatter {
 
-#define PORT "36547"
-#define MAXDATASIZE 100
+constexpr int kMaxDataSize = 100;
 
 void* get_in_addr(sockaddr* sa);
 

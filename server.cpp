@@ -14,26 +14,28 @@
 
 namespace chatter {
 
-static std::vector<char> msg_buffer(MAXDATASIZE);
+static std::vector<char> msg_buffer(kMaxDataSize);
 
-int Server::MakeConnection()
+void Server::MakeConnection(const char* port)
 {
-    addrinfo hints, *servinfo, *p;
+    addrinfo hints;
+    addrinfo* servinfo;
     int ret;
-    int yes = 1;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
-    if ((ret = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0)
+    if ((ret = getaddrinfo(nullptr, port, &hints, &servinfo)) != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\r\n", gai_strerror(ret));
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
-    for (p = servinfo; p != NULL; p = p->ai_next)
+    addrinfo* p;
+    int yes = 1;
+    for (p = servinfo; p != nullptr; p = p->ai_next)
     {
         if ((server_fd_ = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         {
@@ -43,7 +45,7 @@ int Server::MakeConnection()
         if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
         {
             perror("setsockopt");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
         if (bind(server_fd_, p->ai_addr, p->ai_addrlen) == -1)
         {
@@ -56,22 +58,20 @@ int Server::MakeConnection()
 
     freeaddrinfo(servinfo);
 
-    if (p == NULL)
+    if (p == nullptr)
     {
         fprintf(stderr, "chatter-server: failed to bind\r\n");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     if (listen(server_fd_, BACKLOG) == -1)
     {
         perror("chatter-server: listen");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     AddRoom("global");
     client_pfds_.push_back({server_fd_, POLLIN, 0});
-
-    return 0;
 }
 
 void Server::AddRoom(const std::string& name)
@@ -141,7 +141,7 @@ void Server::PollClients()
     if (poll_count == -1)
     {
         perror("poll");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     for (int i = 0; i < client_pfds_.size();)
@@ -185,7 +185,7 @@ std::string Server::GetClientAddr(int client_fd)
 
 int Server::ReceiveMessage(int client_fd)
 {
-    memset(&msg_buffer[0], 0, MAXDATASIZE);
+    memset(&msg_buffer[0], 0, kMaxDataSize);
     return recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
 }
 

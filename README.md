@@ -14,13 +14,13 @@ make
 ## Run Server
 
 ```
-./chatter-server
+./chatter-server <port>
 ```
 
 ## Connect
 
 ```
-telnet <server IP> <port>
+telnet <address> <port>
 ```
 
 ## LICENSE

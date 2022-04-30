@@ -33,7 +33,7 @@ const std::unordered_map<std::string, Command> commands
 class Server
 {
     public:
-        int MakeConnection();
+        void MakeConnection(const char* port);
         void AddRoom(const std::string& name);
         void AddClientToRoom(const std::string& room, Client& client);
         void ConnectClient();
