@@ -20,6 +20,7 @@ enum class Command
     WHO,
     JOIN,
     LEAVE,
+    RANDOM,
 };
 
 const std::unordered_map<std::string, Command> commands
@@ -28,11 +29,13 @@ const std::unordered_map<std::string, Command> commands
     {"who", Command::WHO},
     {"join", Command::JOIN},
     {"leave", Command::LEAVE},
+    {"random", Command::RANDOM},
 };
 
 class Server
 {
     public:
+        Server(const char* port);
         void MakeConnection(const char* port);
         void AddRoom(const std::string& name);
         void AddClientToRoom(const std::string& room, Client& client);
@@ -43,6 +46,7 @@ class Server
         int ReceiveMessage(int client_fd);
         void HandleMessage(int client_fd);
         void SendToClient(const Client& client, const std::string& message);
+        void SendToServer(const std::string& message);
         void ParseCommand(Client& client, std::string& command);
     private:
         int server_fd_;

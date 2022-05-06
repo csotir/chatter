@@ -11,7 +11,6 @@ namespace chatter {
 class Room
 {
     public:
-        Room() = default;
         Room(const std::string& room_name);
         void AddClient(const Client& client);
         void RemoveClient(const Client& client);

@@ -11,15 +11,13 @@ Room::Room(const std::string& room_name) : name_(room_name) { }
 void Room::AddClient(const Client& client)
 {
     client_fds_.insert(client.fd);
-    std::string msg = client.name + "@" + client.addr + " has joined the room!\r\n";
-    BroadCastMsg(client.fd, msg);
+    BroadCastMsg(client.fd, client.name + "@" + client.addr + " has joined the room!\r\n");
 }
 
 void Room::RemoveClient(const Client& client)
 {
     client_fds_.erase(client.fd);
-    std::string msg = client.name + "@" + client.addr + " has left the room!\r\n";
-    BroadCastMsg(client.fd, msg);
+    BroadCastMsg(client.fd, client.name + "@" + client.addr + " has left the room!\r\n");
 }
 
 void Room::BroadCastMsg(int sender_fd, const std::string& msg)

@@ -10,8 +10,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    chatter::Server chatter;
-    chatter.MakeConnection(argv[1]);
+    chatter::Server chatter(argv[1]);
 
     printf("Waiting for clients...\r\n");
 
