@@ -40,11 +40,11 @@ class Server
         void AddRoom(const std::string& name);
         void AddClientToRoom(const std::string& room, Client& client);
         void ConnectClient();
-        void DisconnectClient(int client_fd, int index, bool orderly);
+        void DisconnectClient(int client_fd, int index);
         void PollClients();
         std::string GetClientAddr(int client_fd);
-        int ReceiveMessage(int client_fd);
-        void HandleMessage(int client_fd);
+        int ReceiveMessage(int client_fd, std::string& send_str);
+        void HandleMessage(int client_fd, std::string& send_str);
         void SendToClient(const Client& client, const std::string& message);
         void SendToServer(const std::string& message);
         void ParseCommand(Client& client, std::string& command);

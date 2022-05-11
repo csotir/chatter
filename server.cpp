@@ -1,6 +1,7 @@
 #include "server.h"
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -116,6 +117,7 @@ void Server::ConnectClient()
     }
     else
     {
+        fcntl(client_fd, F_SETFL, O_NONBLOCK);
         Client client;
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
@@ -127,17 +129,10 @@ void Server::ConnectClient()
     }
 }
 
-void Server::DisconnectClient(int client_fd, int index, bool orderly)
+void Server::DisconnectClient(int client_fd, int index)
 {
     Client client = clients_.at(client_fd);
-    if (orderly)
-    {
-        printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
-    }
-    else
-    {
-        perror("recv");
-    }
+    printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
     rooms_.at(client.room).RemoveClient(client);
     SendToServer(client.name + "@" + client.addr + " has disconnected!\r\n");
@@ -165,15 +160,15 @@ void Server::PollClients()
             }
             else
             {
-                int nbytes = ReceiveMessage(client_fd);
-                if (nbytes <= 0)
+                std::string send_str;
+                if (ReceiveMessage(client_fd, send_str) == 0)
                 {
-                    DisconnectClient(client_fd, i, nbytes == 0);
+                    DisconnectClient(client_fd, i);
                     continue;
                 }
-                else
+                else if (send_str[0] > 31)
                 {
-                    HandleMessage(client_fd);
+                    HandleMessage(client_fd, send_str);
                 }
             }
         }
@@ -193,38 +188,38 @@ std::string Server::GetClientAddr(int client_fd)
     return std::string(addr_buffer);
 }
 
-int Server::ReceiveMessage(int client_fd)
+int Server::ReceiveMessage(int client_fd, std::string& send_str)
 {
+    int nbytes;
     memset(&msg_buffer[0], 0, kMaxDataSize);
-    return recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0);
+    while ((nbytes = recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0)) != -1)
+    {
+        if (nbytes == 0)
+        {
+            break;
+        }
+        send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
+        memset(&msg_buffer[0], 0, kMaxDataSize);
+    }
+    send_str = send_str.c_str(); // trim null chars
+    return nbytes;
 }
 
-void Server::HandleMessage(int client_fd)
+void Server::HandleMessage(int client_fd, std::string& send_str)
 {
-    if (msg_buffer[0] > 31)
-    { // ignore empty messages
-        std::string send_str(msg_buffer.cbegin(), msg_buffer.cend());
-        // TODO: probably set socket to nonblocking and loop on recv ret > 0 instead
-        while (send_str.back() != '\0' && send_str.back() != '\n')
-        { // get whole message
-            ReceiveMessage(client_fd);
-            send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
-        }
-        if (send_str[0] != '/')
-        { // sign and send message
-            send_str.insert(0, "[" + clients_.at(client_fd).name + "@" + clients_.at(client_fd).addr + "] ");
-            send_str = send_str.c_str(); // trim null chars
-            if (send_str.find("\r\n", send_str.size() - 2) == std::string::npos)
-            {
-                send_str.append("\r\n");
-            }
-            rooms_.at(clients_.at(client_fd).room).BroadCastMsg(client_fd, send_str);
-        }
-        else
+    if (send_str[0] != '/')
+    { // sign and send message
+        send_str.insert(0, "[" + clients_.at(client_fd).name + "@" + clients_.at(client_fd).addr + "] ");
+        if (send_str.find("\r\n", send_str.size() - 2) == std::string::npos)
         {
-            send_str = send_str.substr(1, std::string::npos);
-            ParseCommand(clients_.at(client_fd), send_str);
+            send_str.append("\r\n");
         }
+        rooms_.at(clients_.at(client_fd).room).BroadCastMsg(client_fd, send_str);
+    }
+    else
+    {
+        send_str = send_str.substr(1, std::string::npos);
+        ParseCommand(clients_.at(client_fd), send_str);
     }
 }
 
