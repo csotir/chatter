@@ -10,7 +10,7 @@ struct Client
     int fd;
     std::string name = "anon";
     std::string addr;
-    std::string room;
+    std::string room_name;
 };
 
 } // namespace chatter

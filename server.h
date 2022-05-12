@@ -12,7 +12,7 @@
 
 namespace chatter {
 
-#define BACKLOG 10
+constexpr int Backlog = 10;
 
 enum class Command
 {
@@ -21,38 +21,49 @@ enum class Command
     JOIN,
     LEAVE,
     RANDOM,
+    HELP,
 };
 
-const std::unordered_map<std::string, Command> commands
+const std::unordered_map<std::string, Command> Commands
 {
     {"name", Command::NAME},
     {"who", Command::WHO},
     {"join", Command::JOIN},
     {"leave", Command::LEAVE},
     {"random", Command::RANDOM},
+    {"help", Command::HELP},
+};
+
+const std::vector<std::string> Help
+{
+    "/name <name> : Change your display name.",
+    "/who         : List users in current room.",
+    "/join <room> : Join the specified room.",
+    "/leave       : Leave the current room.",
+    "/random      : Roll a random number from 0 to 99.",
+    "/help        : Display available commands.",
 };
 
 class Server
 {
     public:
         Server(const char* port);
+        void SendToServer(const std::string& message) const;
+        void PollClients();
+    private:
+        std::string GetClientAddr(int client_fd) const;
         void MakeConnection(const char* port);
-        void AddRoom(const std::string& name);
-        void AddClientToRoom(const std::string& room, Client& client);
         void ConnectClient();
         void DisconnectClient(int client_fd, int index);
-        void PollClients();
-        std::string GetClientAddr(int client_fd);
-        int ReceiveMessage(int client_fd, std::string& send_str);
-        void HandleMessage(int client_fd, std::string& send_str);
-        void SendToClient(const Client& client, const std::string& message);
-        void SendToServer(const std::string& message);
+        void AddClientToRoom(Client& client, const std::string& room);
+        void SendToClient(const Client& client, const std::string& message) const;
+        int ReceiveMessage(int client_fd, std::string& message);
         void ParseCommand(Client& client, std::string& command);
-    private:
         int server_fd_;
         std::vector<pollfd> client_pfds_;
         std::unordered_map<int, Client> clients_;
         std::unordered_map<std::string, Room> rooms_;
+        std::vector<char> message_buffer_;
 };
 
 } // namespace chatter

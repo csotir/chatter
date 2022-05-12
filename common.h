@@ -5,7 +5,7 @@
 
 namespace chatter {
 
-constexpr int kMaxDataSize = 100;
+constexpr int MaxDataSize = 100;
 
 void* get_in_addr(sockaddr* sa);
 

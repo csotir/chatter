@@ -16,12 +16,22 @@
 
 namespace chatter {
 
-static std::vector<char> msg_buffer(kMaxDataSize);
-
-Server::Server(const char* port)
+Server::Server(const char* port) : message_buffer_(chatter::MaxDataSize)
 {
     srand(time(nullptr));
     MakeConnection(port);
+}
+
+std::string Server::GetClientAddr(int client_fd) const
+{
+    char addr_buffer[INET6_ADDRSTRLEN];
+    sockaddr_storage client_addr;
+    socklen_t addr_size = sizeof client_addr;
+    getpeername(client_fd, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
+    inet_ntop(client_addr.ss_family,
+        get_in_addr(reinterpret_cast<sockaddr*>(&client_addr)),
+        addr_buffer, sizeof addr_buffer);
+    return std::string(addr_buffer);
 }
 
 void Server::MakeConnection(const char* port)
@@ -72,38 +82,13 @@ void Server::MakeConnection(const char* port)
         exit(EXIT_FAILURE);
     }
 
-    if (listen(server_fd_, BACKLOG) == -1)
+    if (listen(server_fd_, chatter::Backlog) == -1)
     {
         perror("chatter-server: listen");
         exit(EXIT_FAILURE);
     }
 
-    AddRoom("global");
     client_pfds_.push_back({server_fd_, POLLIN, 0});
-}
-
-void Server::AddRoom(const std::string& name)
-{
-    if (rooms_.find(name) == rooms_.end())
-    {
-        Room room(name);
-        rooms_.emplace(name, room);
-    }
-}
-
-void Server::AddClientToRoom(const std::string& room, Client& client)
-{
-    if (client.room != room)
-    {
-        if (client.room != "")
-        {
-            SendToClient(client, "Leaving room: " + client.room + "\r\n");
-            rooms_.at(client.room).RemoveClient(client);
-        }
-        rooms_.at(room).AddClient(client);
-        client.room = room;
-        SendToClient(client, "Joined room: " + room + "\r\n");
-    }
 }
 
 void Server::ConnectClient()
@@ -122,7 +107,7 @@ void Server::ConnectClient()
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
         SendToServer(client.name + "@" + client.addr + " has connected!\r\n");
-        AddClientToRoom("global", client);
+        AddClientToRoom(client, "global");
         clients_.emplace(client_fd, client);
         client_pfds_.push_back({client_fd, POLLIN, 0});
         printf("New connection from %s on socket %d\r\n", client.addr.c_str(), client_fd);
@@ -131,13 +116,45 @@ void Server::ConnectClient()
 
 void Server::DisconnectClient(int client_fd, int index)
 {
-    Client client = clients_.at(client_fd);
+    Client& client = clients_.at(client_fd);
     printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
-    rooms_.at(client.room).RemoveClient(client);
+    rooms_.at(client.room_name).RemoveClient(client);
     SendToServer(client.name + "@" + client.addr + " has disconnected!\r\n");
     client_pfds_.erase(client_pfds_.begin() + index);
     clients_.erase(client_fd);
+}
+
+void Server::AddClientToRoom(Client& client, const std::string& room_name)
+{
+    if (client.room_name != room_name)
+    {
+        rooms_.emplace(room_name, Room(room_name));
+        if (client.room_name != "")
+        {
+            SendToClient(client, "Leaving room: " + client.room_name + "\r\n");
+            rooms_.at(client.room_name).RemoveClient(client);
+        }
+        rooms_.at(room_name).AddClient(client);
+        client.room_name = room_name;
+        SendToClient(client, "Joined room: " + room_name + "\r\n");
+    }
+}
+
+void Server::SendToClient(const Client& client, const std::string& message) const
+{
+    if (send(client.fd, message.c_str(), message.size(), 0) == -1)
+    {
+        perror("send");
+    }
+}
+
+void Server::SendToServer(const std::string& message) const
+{
+    for (const auto& [_, room] : rooms_)
+    {
+        room.BroadCastMessage(server_fd_, message);
+    }
 }
 
 void Server::PollClients()
@@ -153,22 +170,31 @@ void Server::PollClients()
     {
         if (client_pfds_[i].revents & POLLIN)
         {
-            int client_fd = client_pfds_[i].fd;
-            if (client_fd == server_fd_)
+            if (client_pfds_[i].fd == server_fd_)
             {
                 ConnectClient();
             }
             else
             {
-                std::string send_str;
-                if (ReceiveMessage(client_fd, send_str) == 0)
+                Client& client = clients_.at(client_pfds_[i].fd);
+                std::string message;
+                if (ReceiveMessage(client.fd, message) == 0)
                 {
-                    DisconnectClient(client_fd, i);
+                    DisconnectClient(client.fd, i);
                     continue;
                 }
-                else if (send_str[0] > 31)
+                else if (message[0] > 31)
                 {
-                    HandleMessage(client_fd, send_str);
+                    if (message[0] != '/')
+                    {
+                        message.insert(0, "[" + client.name + "@" + client.addr + "] ");
+                        rooms_.at(client.room_name).BroadCastMessage(client.fd, message);
+                    }
+                    else
+                    {
+                        message = message.substr(1, std::string::npos);
+                        ParseCommand(client, message);
+                    }
                 }
             }
         }
@@ -176,67 +202,25 @@ void Server::PollClients()
     }
 }
 
-std::string Server::GetClientAddr(int client_fd)
-{
-    char addr_buffer[INET6_ADDRSTRLEN];
-    sockaddr_storage client_addr;
-    socklen_t addr_size = sizeof client_addr;
-    getpeername(client_fd, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
-    inet_ntop(client_addr.ss_family,
-        get_in_addr(reinterpret_cast<sockaddr*>(&client_addr)),
-        addr_buffer, sizeof addr_buffer);
-    return std::string(addr_buffer);
-}
-
-int Server::ReceiveMessage(int client_fd, std::string& send_str)
+int Server::ReceiveMessage(int client_fd, std::string& message)
 {
     int nbytes;
-    memset(&msg_buffer[0], 0, kMaxDataSize);
-    while ((nbytes = recv(client_fd, &msg_buffer[0], msg_buffer.size(), 0)) != -1)
+    memset(&message_buffer_[0], 0, chatter::MaxDataSize);
+    while ((nbytes = recv(client_fd, &message_buffer_[0], message_buffer_.size(), 0)) != -1)
     {
         if (nbytes == 0)
         {
             break;
         }
-        send_str.append(msg_buffer.cbegin(), msg_buffer.cend());
-        memset(&msg_buffer[0], 0, kMaxDataSize);
+        message.append(message_buffer_.cbegin(), message_buffer_.cend());
+        memset(&message_buffer_[0], 0, chatter::MaxDataSize);
     }
-    send_str = send_str.c_str(); // trim null chars
+    message = message.c_str(); // trim null chars
+    if (message.find("\r\n", message.size() - 2) == std::string::npos)
+    {
+        message.append("\r\n");
+    }
     return nbytes;
-}
-
-void Server::HandleMessage(int client_fd, std::string& send_str)
-{
-    if (send_str[0] != '/')
-    { // sign and send message
-        send_str.insert(0, "[" + clients_.at(client_fd).name + "@" + clients_.at(client_fd).addr + "] ");
-        if (send_str.find("\r\n", send_str.size() - 2) == std::string::npos)
-        {
-            send_str.append("\r\n");
-        }
-        rooms_.at(clients_.at(client_fd).room).BroadCastMsg(client_fd, send_str);
-    }
-    else
-    {
-        send_str = send_str.substr(1, std::string::npos);
-        ParseCommand(clients_.at(client_fd), send_str);
-    }
-}
-
-void Server::SendToClient(const Client& client, const std::string& message)
-{
-    if (send(client.fd, message.c_str(), message.size(), 0) == -1)
-    {
-        perror("send");
-    }
-}
-
-void Server::SendToServer(const std::string& message)
-{
-    for (auto& [_, room] : rooms_)
-    {
-        room.BroadCastMsg(server_fd_, message);
-    }
 }
 
 void Server::ParseCommand(Client& client, std::string& command)
@@ -273,9 +257,9 @@ void Server::ParseCommand(Client& client, std::string& command)
     }
 
     /* COMMANDS */
-    if (tokens.size() > 0 && commands.find(tokens[0]) != commands.end())
+    if (tokens.size() > 0 && chatter::Commands.find(tokens[0]) != chatter::Commands.end())
     {
-        switch (commands.at(tokens.at(0)))
+        switch (chatter::Commands.at(tokens.at(0)))
         {
             case Command::NAME:
             {
@@ -285,7 +269,7 @@ void Server::ParseCommand(Client& client, std::string& command)
                     client.name = tokens[1];
                     SendToClient(client, "Your new name is " + client.name + ".\r\n");
                     out.append(client.name + "@" + client.addr + ".\r\n");
-                    rooms_.at(client.room).BroadCastMsg(client.fd, out);
+                    rooms_.at(client.room_name).BroadCastMessage(client.fd, out);
                 }
                 else
                 {
@@ -295,8 +279,8 @@ void Server::ParseCommand(Client& client, std::string& command)
             }
             case Command::WHO:
             {
-                std::string out = "Members in current room (" + client.room + "):\r\n";
-                for (auto member : rooms_.at(client.room).GetClients())
+                std::string out = "Members in current room (" + client.room_name + "):\r\n";
+                for (const auto& member : rooms_.at(client.room_name).GetClients())
                 {
                     out += clients_.at(member).name + '@' + clients_.at(member).addr + "\r\n";
                 }
@@ -307,14 +291,13 @@ void Server::ParseCommand(Client& client, std::string& command)
             {
                 if (tokens.size() > 1)
                 {
-                    if (client.room == tokens[1])
+                    if (client.room_name == tokens[1])
                     {
                         SendToClient(client, "You are already in that room.\r\n");
                     }
                     else
                     {
-                        AddRoom(tokens[1]);
-                        AddClientToRoom(tokens[1], client);
+                        AddClientToRoom(client, tokens[1]);
                     }
                 }
                 else
@@ -325,13 +308,13 @@ void Server::ParseCommand(Client& client, std::string& command)
             }
             case Command::LEAVE:
             {
-                if (client.room == "global")
+                if (client.room_name == "global")
                 {
                     SendToClient(client, "You are already in the global room.\r\n");
                 }
                 else
                 {
-                    AddClientToRoom("global", client);
+                    AddClientToRoom(client, "global");
                 }
                 break;
             }
@@ -339,7 +322,17 @@ void Server::ParseCommand(Client& client, std::string& command)
             {
                 std::string out = "Random! " + client.name + "@" + client.addr +
                     " rolled a " + std::to_string(rand() % 100) + ".\r\n";
-                rooms_.at(client.room).BroadCastMsg(server_fd_, out);
+                rooms_.at(client.room_name).BroadCastMessage(server_fd_, out);
+                break;
+            }
+            case Command::HELP:
+            {
+                std::string out;
+                for (const auto& help_text : chatter::Help)
+                {
+                    out.append(help_text + "\r\n");
+                }
+                SendToClient(client, out);
                 break;
             }
         }

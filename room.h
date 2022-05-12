@@ -14,8 +14,8 @@ class Room
         Room(const std::string& room_name);
         void AddClient(const Client& client);
         void RemoveClient(const Client& client);
-        void BroadCastMsg(int sender_fd, const std::string& msg);
-        const std::unordered_set<int>& GetClients() { return client_fds_; }
+        void BroadCastMessage(int sender_fd, const std::string& message) const;
+        const std::unordered_set<int>& GetClients() const { return client_fds_; }
     private:
         std::string name_;
         std::unordered_set<int> client_fds_;

@@ -14,7 +14,7 @@
 int main(int argc, char* argv[])
 {
     int sockfd, bufferSize;
-    char buffer[chatter::kMaxDataSize];
+    char buffer[chatter::MaxDataSize];
     struct addrinfo hints, *servinfo, *p;
     int ret;
     char str[INET6_ADDRSTRLEN];
@@ -62,7 +62,7 @@ int main(int argc, char* argv[])
 
     freeaddrinfo(servinfo);
 
-    if ((bufferSize = recv(sockfd, buffer, chatter::kMaxDataSize-1, 0)) == -1)
+    if ((bufferSize = recv(sockfd, buffer, chatter::MaxDataSize-1, 0)) == -1)
     {
         perror("recv");
         return 1;
