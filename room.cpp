@@ -8,21 +8,21 @@ namespace chatter {
 
 Room::Room(const std::string& room_name) : name_(room_name) { }
 
-void Room::AddClient(const Client& client)
+void Room::AddMember(const Client& client)
 {
-    client_fds_.insert(client.fd);
+    member_fds_.insert(client.fd);
     BroadCastMessage(client.fd, client.name + "@" + client.addr + " has joined the room!\r\n");
 }
 
-void Room::RemoveClient(const Client& client)
+void Room::RemoveMember(const Client& client)
 {
-    client_fds_.erase(client.fd);
+    member_fds_.erase(client.fd);
     BroadCastMessage(client.fd, client.name + "@" + client.addr + " has left the room!\r\n");
 }
 
 void Room::BroadCastMessage(int sender_fd, const std::string& message) const
 {
-    for (auto dest_fd : client_fds_)
+    for (auto dest_fd : member_fds_)
     {
         if (dest_fd != sender_fd)
         {

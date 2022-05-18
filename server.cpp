@@ -119,7 +119,7 @@ void Server::DisconnectClient(int client_fd, int index)
     Client& client = clients_.at(client_fd);
     printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
-    rooms_.at(client.room_name).RemoveClient(client);
+    rooms_.at(client.room_name).RemoveMember(client);
     SendToServer(client.name + "@" + client.addr + " has disconnected!\r\n");
     client_pfds_.erase(client_pfds_.begin() + index);
     clients_.erase(client_fd);
@@ -133,9 +133,13 @@ void Server::AddClientToRoom(Client& client, const std::string& room_name)
         if (client.room_name != "")
         {
             SendToClient(client, "Leaving room: " + client.room_name + "\r\n");
-            rooms_.at(client.room_name).RemoveClient(client);
+            rooms_.at(client.room_name).RemoveMember(client);
+            if (rooms_.at(client.room_name).GetMembers().size() == 0)
+            {
+                rooms_.erase(client.room_name);
+            }
         }
-        rooms_.at(room_name).AddClient(client);
+        rooms_.at(room_name).AddMember(client);
         client.room_name = room_name;
         SendToClient(client, "Joined room: " + room_name + "\r\n");
     }
@@ -279,10 +283,34 @@ void Server::ParseCommand(Client& client, std::string& command)
             }
             case Command::WHO:
             {
-                std::string out = "Members in current room (" + client.room_name + "):\r\n";
-                for (const auto& member : rooms_.at(client.room_name).GetClients())
+                std::string room_name = client.room_name;
+                std::string out;
+                if (tokens.size() > 1)
+                {
+                    if (rooms_.find(tokens[1]) == rooms_.end())
+                    {
+                        SendToClient(client, "Room \"" + tokens[1] + "\" doesn't exist!\r\n");
+                        return;
+                    }
+                    else
+                    {
+                        room_name = tokens[1];
+                    }
+                }
+                out.append("Members of room \"" + room_name + "\":\r\n");
+                for (auto member : rooms_.at(room_name).GetMembers())
                 {
                     out += clients_.at(member).name + '@' + clients_.at(member).addr + "\r\n";
+                }
+                SendToClient(client, out);
+                break;
+            }
+            case Command::ROOMS:
+            {
+                std::string out = "Rooms (members):\r\n";
+                for (const auto& room : rooms_)
+                {
+                    out.append(room.first + " (" + std::to_string(room.second.GetMembers().size()) + ")\r\n");
                 }
                 SendToClient(client, out);
                 break;

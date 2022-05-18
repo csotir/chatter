@@ -18,6 +18,7 @@ enum class Command
 {
     NAME,
     WHO,
+    ROOMS,
     JOIN,
     LEAVE,
     RANDOM,
@@ -28,6 +29,7 @@ const std::unordered_map<std::string, Command> Commands
 {
     {"name", Command::NAME},
     {"who", Command::WHO},
+    {"rooms", Command::ROOMS},
     {"join", Command::JOIN},
     {"leave", Command::LEAVE},
     {"random", Command::RANDOM},
@@ -38,6 +40,8 @@ const std::vector<std::string> Help
 {
     "/name <name> : Change your display name.",
     "/who         : List users in current room.",
+    "/who <room>  : List users in specified room.",
+    "/rooms       : List rooms.",
     "/join <room> : Join the specified room.",
     "/leave       : Leave the current room.",
     "/random      : Roll a random number from 0 to 99.",
