@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <stdexcept>
 
 #include "common.h"
 
@@ -106,7 +107,8 @@ void Server::ConnectClient()
         Client client;
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
-        SendToServer(client.name + "@" + client.addr + " has connected!\r\n");
+        SendToServer("[" + std::to_string(client.fd) + "]" + client.name + " has connected!\r\n");
+        SendToClient(client, "Welcome! You are #" + std::to_string(client.fd) + ".\r\n");
         AddClientToRoom(client, "global");
         clients_.emplace(client_fd, client);
         client_pfds_.push_back({client_fd, POLLIN, 0});
@@ -120,7 +122,7 @@ void Server::DisconnectClient(int client_fd, int index)
     printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
     rooms_.at(client.room_name).RemoveMember(client);
-    SendToServer(client.name + "@" + client.addr + " has disconnected!\r\n");
+    SendToServer("[" + std::to_string(client.fd) + "]" + client.name + " has disconnected!\r\n");
     client_pfds_.erase(client_pfds_.begin() + index);
     clients_.erase(client_fd);
 }
@@ -134,7 +136,7 @@ void Server::AddClientToRoom(Client& client, const std::string& room_name)
         {
             SendToClient(client, "Leaving room: " + client.room_name + "\r\n");
             rooms_.at(client.room_name).RemoveMember(client);
-            if (rooms_.at(client.room_name).GetMembers().size() == 0)
+            if (rooms_.at(client.room_name).GetMembers().empty())
             {
                 rooms_.erase(client.room_name);
             }
@@ -191,7 +193,7 @@ void Server::PollClients()
                 {
                     if (message[0] != '/')
                     {
-                        message.insert(0, "[" + client.name + "@" + client.addr + "] ");
+                        message.insert(0, "[" + std::to_string(client.fd) + "]" + client.name + ": ");
                         rooms_.at(client.room_name).BroadCastMessage(client.fd, message);
                     }
                     else
@@ -222,57 +224,79 @@ int Server::ReceiveMessage(int client_fd, std::string& message)
     message = message.c_str(); // trim null chars
     if (message.find("\r\n", message.size() - 2) == std::string::npos)
     {
-        message.append("\r\n");
+        message += "\r\n";
     }
     return nbytes;
 }
 
-void Server::ParseCommand(Client& client, std::string& command)
+std::string Server::GetToken(std::string& message) const
 {
-    // TODO: only clean/tokenize the first word at this point, for direct message support
-    std::vector<std::string> tokens;
-    for (int i = 0; i < command.size();)
-    { // clean command string
-        if (command[i] < 32)
+    std::string ret;
+    int pos = 0;
+    while (ret.empty() && (pos = message.find(' ')) != std::string::npos)
+    {
+        ret += message.substr(0, pos);
+        message.erase(0, pos + 1);
+    }
+    if (ret.empty())
+    {
+        ret = message;
+        message.erase(0, std::string::npos);
+    }
+    return ret;
+}
+
+bool Server::SanitizeString(std::string& str, bool lower) const
+{
+    for (int i = 0; i < str.size();)
+    {
+        if (str[i] < 32)
         {
-            command.erase(command.begin() + i);
+            str.erase(str.begin() + i);
             continue;
         }
-        if (!isalnum(command[i]) && command[i] != ' ')
+        if (!isalpha(str[i]))
         {
-            SendToClient(client, "Invalid command.\r\n");
-            return;
+            str.erase(0, std::string::npos);
+            return false;
         }
-        command[i] = tolower(command[i]);
+        if (lower)
+        {
+            str[i] = tolower(str[i]);
+        }
         ++i;
     }
-    int pos = 0;
-    while ((pos = command.find(' ')) != std::string::npos)
-    { // tokenize command
-        if (pos > 1)
-        {
-            tokens.push_back(command.substr(0, pos));
-        }
-        command.erase(0, pos + 1);
-    }
-    if (command.size() > 0)
+    return true;
+}
+
+void Server::ParseCommand(Client& client, std::string& message)
+{
+    std::string command = GetToken(message);
+    if (!SanitizeString(command, true))
     {
-        tokens.push_back(command);
+        SendToClient(client, "Invalid command.\r\n");
+        return;
     }
 
     /* COMMANDS */
-    if (tokens.size() > 0 && chatter::Commands.find(tokens[0]) != chatter::Commands.end())
+    if (chatter::Commands.find(command) != chatter::Commands.end())
     {
-        switch (chatter::Commands.at(tokens.at(0)))
+        switch (chatter::Commands.at(command))
         {
             case Command::NAME:
             {
-                if (tokens.size() > 1)
+                std::string new_name = GetToken(message);
+                if (!SanitizeString(new_name))
                 {
-                    std::string out = client.name + "@" + client.addr + " is now known as ";
-                    client.name = tokens[1];
+                    SendToClient(client, "Invalid name.\r\n");
+                    return;
+                }
+                if (!new_name.empty())
+                {
+                    std::string out = "[" + std::to_string(client.fd) + "]" + client.name + " is now known as ";
+                    client.name = new_name;
                     SendToClient(client, "Your new name is " + client.name + ".\r\n");
-                    out.append(client.name + "@" + client.addr + ".\r\n");
+                    out += client.name + ".\r\n";
                     rooms_.at(client.room_name).BroadCastMessage(client.fd, out);
                 }
                 else
@@ -283,24 +307,38 @@ void Server::ParseCommand(Client& client, std::string& command)
             }
             case Command::WHO:
             {
-                std::string room_name = client.room_name;
+                std::string room_name = GetToken(message);
                 std::string out;
-                if (tokens.size() > 1)
+                if (!SanitizeString(room_name, true))
                 {
-                    if (rooms_.find(tokens[1]) == rooms_.end())
+                    SendToClient(client, "Invalid room name.\r\n");
+                    return;
+                }
+                if (!room_name.empty())
+                {
+                    if (rooms_.find(room_name) == rooms_.end())
                     {
-                        SendToClient(client, "Room \"" + tokens[1] + "\" doesn't exist!\r\n");
+                        SendToClient(client, "Room \"" + room_name + "\" doesn't exist!\r\n");
                         return;
                     }
                     else
                     {
-                        room_name = tokens[1];
+                        room_name = room_name;
                     }
                 }
-                out.append("Members of room \"" + room_name + "\":\r\n");
+                else
+                {
+                    room_name = client.room_name;
+                }
+                out += "Members of room \"" + room_name + "\":\r\n";
                 for (auto member : rooms_.at(room_name).GetMembers())
                 {
-                    out += clients_.at(member).name + '@' + clients_.at(member).addr + "\r\n";
+                    out += "[" + std::to_string(clients_.at(member).fd) + "]" + clients_.at(member).name;
+                    if (member == client.fd)
+                    {
+                        out += " (you)";
+                    }
+                    out += "\r\n";
                 }
                 SendToClient(client, out);
                 break;
@@ -310,22 +348,28 @@ void Server::ParseCommand(Client& client, std::string& command)
                 std::string out = "Rooms (members):\r\n";
                 for (const auto& room : rooms_)
                 {
-                    out.append(room.first + " (" + std::to_string(room.second.GetMembers().size()) + ")\r\n");
+                    out += room.first + " (" + std::to_string(room.second.GetMembers().size()) + ")\r\n";
                 }
                 SendToClient(client, out);
                 break;
             }
             case Command::JOIN:
             {
-                if (tokens.size() > 1)
+                std::string new_room = GetToken(message);
+                if (!SanitizeString(new_room, true))
                 {
-                    if (client.room_name == tokens[1])
+                    SendToClient(client, "Invalid room name.\r\n");
+                    return;
+                }
+                if (!new_room.empty())
+                {
+                    if (client.room_name == new_room)
                     {
                         SendToClient(client, "You are already in that room.\r\n");
                     }
                     else
                     {
-                        AddClientToRoom(client, tokens[1]);
+                        AddClientToRoom(client, new_room);
                     }
                 }
                 else
@@ -346,10 +390,36 @@ void Server::ParseCommand(Client& client, std::string& command)
                 }
                 break;
             }
+            case Command::TELL:
+            {
+                int dest_fd;
+                try
+                {
+                    dest_fd = std::stoi(GetToken(message));
+                }
+                catch (...)
+                {
+                    SendToClient(client, "Please enter a valid recipient number.\r\n");
+                    return;
+                }
+                if (clients_.find(dest_fd) == clients_.end())
+                {
+                    SendToClient(client, "User #" + std::to_string(dest_fd) + " does not exist.\r\n");
+                }
+                else
+                {
+                    if (!message.empty())
+                    {
+                        SendToClient(clients_.at(dest_fd), "[" + std::to_string(client.fd) +
+                            "]" + client.name + "> " + message);
+                    }
+                }
+                break;
+            }
             case Command::RANDOM:
             {
-                std::string out = "Random! " + client.name + "@" + client.addr +
-                    " rolled a " + std::to_string(rand() % 100) + ".\r\n";
+                std::string out = "[" + std::to_string(client.fd) + "]Random! " +
+                    client.name + " rolled a " + std::to_string(rand() % 100) + ".\r\n";
                 rooms_.at(client.room_name).BroadCastMessage(server_fd_, out);
                 break;
             }
@@ -358,7 +428,7 @@ void Server::ParseCommand(Client& client, std::string& command)
                 std::string out;
                 for (const auto& help_text : chatter::Help)
                 {
-                    out.append(help_text + "\r\n");
+                    out += help_text + "\r\n";
                 }
                 SendToClient(client, out);
                 break;

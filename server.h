@@ -21,6 +21,7 @@ enum class Command
     ROOMS,
     JOIN,
     LEAVE,
+    TELL,
     RANDOM,
     HELP,
 };
@@ -32,20 +33,22 @@ const std::unordered_map<std::string, Command> Commands
     {"rooms", Command::ROOMS},
     {"join", Command::JOIN},
     {"leave", Command::LEAVE},
+    {"tell", Command::TELL},
     {"random", Command::RANDOM},
     {"help", Command::HELP},
 };
 
 const std::vector<std::string> Help
 {
-    "/name <name> : Change your display name.",
-    "/who         : List users in current room.",
-    "/who <room>  : List users in specified room.",
-    "/rooms       : List rooms.",
-    "/join <room> : Join the specified room.",
-    "/leave       : Leave the current room.",
-    "/random      : Roll a random number from 0 to 99.",
-    "/help        : Display available commands.",
+    "/name <name>        : Change your display name.",
+    "/who                : List users in current room.",
+    "/who <room>         : List users in specified room.",
+    "/rooms              : List rooms.",
+    "/join <room>        : Join the specified room.",
+    "/leave              : Leave the current room.",
+    "/tell <#> <message> : Send a direct message to the specified user #.",
+    "/random             : Roll a random number from 0 to 99.",
+    "/help               : Display available commands.",
 };
 
 class Server
@@ -62,6 +65,8 @@ class Server
         void AddClientToRoom(Client& client, const std::string& room);
         void SendToClient(const Client& client, const std::string& message) const;
         int ReceiveMessage(int client_fd, std::string& message);
+        std::string GetToken(std::string& message) const;
+        bool SanitizeString(std::string& str, bool lower = false) const;
         void ParseCommand(Client& client, std::string& command);
         int server_fd_;
         std::vector<pollfd> client_pfds_;

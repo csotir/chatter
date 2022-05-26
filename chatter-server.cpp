@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
 
     chatter::Server chatter(argv[1]);
 
-    printf("Waiting for clients...\r\n");
+    printf("Waiting for clients on port %s...\r\n", argv[1]);
 
     while (true)
     {
