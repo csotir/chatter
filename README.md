@@ -14,7 +14,7 @@ make
 ## Run Server
 
 ```
-./chatter-server <port>
+./chatter <port>
 ```
 
 ## Connect

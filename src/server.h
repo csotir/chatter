@@ -2,6 +2,7 @@
 #define CHATTER_SERVER_H_
 
 #include <poll.h>
+#include <sys/socket.h>
 
 #include <string>
 #include <unordered_map>
@@ -13,6 +14,7 @@
 namespace chatter {
 
 constexpr int Backlog = 10;
+constexpr int MaxDataSize = 100;
 
 enum class Command
 {
@@ -59,6 +61,7 @@ class Server
         void PollClients();
     private:
         std::string GetClientAddr(int client_fd) const;
+        void* GetInAddr(sockaddr* sa) const;
         void MakeConnection(const char* port);
         void ConnectClient();
         void DisconnectClient(int client_fd, int index);

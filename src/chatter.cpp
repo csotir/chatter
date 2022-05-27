@@ -6,7 +6,7 @@ int main(int argc, char* argv[])
 {
     if (argc != 2)
     {
-        fprintf(stderr, "usage: chatter-server <port>\r\n");
+        fprintf(stderr, "usage: chatter <port>\r\n");
         return 1;
     }
 

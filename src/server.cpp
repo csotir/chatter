@@ -4,7 +4,6 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -12,8 +11,6 @@
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
-
-#include "common.h"
 
 namespace chatter {
 
@@ -29,11 +26,21 @@ std::string Server::GetClientAddr(int client_fd) const
     sockaddr_storage client_addr;
     socklen_t addr_size = sizeof client_addr;
     getpeername(client_fd, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
+
     inet_ntop(client_addr.ss_family,
-        get_in_addr(reinterpret_cast<sockaddr*>(&client_addr)),
+        GetInAddr(reinterpret_cast<sockaddr*>(&client_addr)),
         addr_buffer, sizeof addr_buffer);
     return std::string(addr_buffer);
 }
+
+void* Server::GetInAddr(sockaddr* sa) const
+{
+    if (sa->sa_family == AF_INET)
+    {
+        return &((reinterpret_cast<sockaddr_in*>(sa))->sin_addr);
+    }
+    return &((reinterpret_cast<sockaddr_in6*>(sa))->sin6_addr);
+};
 
 void Server::MakeConnection(const char* port)
 {
