@@ -6,12 +6,18 @@
 
 namespace chatter {
 
-Room::Room(const std::string& room_name) : name_(room_name) { }
+Room::Room(const std::string& room_name, const std::string& password)
+    : name_(room_name), password_(password) { }
 
-void Room::AddMember(const Client& client)
+bool Room::AddMember(const Client& client, const std::string& password)
 {
+    if (password != password_ && password_ != "")
+    {
+        return false;
+    }
     member_fds_.insert(client.fd);
     BroadCastMessage(client.fd, "[" + std::to_string(client.fd) + "]" + client.name + " has joined the room!\r\n");
+    return true;
 }
 
 void Room::RemoveMember(const Client& client)

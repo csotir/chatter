@@ -134,23 +134,31 @@ void Server::DisconnectClient(int client_fd, int index)
     clients_.erase(client_fd);
 }
 
-void Server::AddClientToRoom(Client& client, const std::string& room_name)
+void Server::AddClientToRoom(Client& client, const std::string& room_name, const std::string& password)
 {
-    if (client.room_name != room_name)
+    std::string old_room_name = client.room_name;
+    if (old_room_name != room_name)
     {
-        rooms_.emplace(room_name, Room(room_name));
-        if (client.room_name != "")
+        rooms_.emplace(room_name, Room(room_name, password));
+        if (rooms_.at(room_name).AddMember(client, password))
         {
-            SendToClient(client, "Leaving room: " + client.room_name + "\r\n");
-            rooms_.at(client.room_name).RemoveMember(client);
-            if (rooms_.at(client.room_name).GetMembers().empty())
+            if (old_room_name != "")
             {
-                rooms_.erase(client.room_name);
+                SendToClient(client, "Leaving room: " + old_room_name + "\r\n");
+                rooms_.at(old_room_name).RemoveMember(client);
+                if (rooms_.at(old_room_name).GetMembers().empty())
+                {
+                    rooms_.erase(old_room_name);
+                }
             }
+            client.room_name = room_name;
+            SendToClient(client, "Joined room: " + room_name + "\r\n");
         }
-        rooms_.at(room_name).AddMember(client);
-        client.room_name = room_name;
-        SendToClient(client, "Joined room: " + room_name + "\r\n");
+        else
+        {
+            SendToClient(client, "Incorrect password!\r\n");
+        }
+        
     }
 }
 
@@ -376,7 +384,16 @@ void Server::ParseCommand(Client& client, std::string& message)
                     }
                     else
                     {
-                        AddClientToRoom(client, new_room);
+                        std::string password = GetToken(message);
+                        if (new_room == "global")
+                        {
+                            password.clear();
+                        }
+                        if (!password.empty())
+                        {
+                            password.erase(password.size() - 2, std::string::npos); // remove newline
+                        }
+                        AddClientToRoom(client, new_room, password);
                     }
                 }
                 else
@@ -433,7 +450,7 @@ void Server::ParseCommand(Client& client, std::string& message)
             case Command::HELP:
             {
                 std::string out;
-                for (const auto& help_text : chatter::Help)
+                for (const auto& help_text : chatter::HelpText)
                 {
                     out += help_text + "\r\n";
                 }

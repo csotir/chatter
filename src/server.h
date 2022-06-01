@@ -40,17 +40,18 @@ const std::unordered_map<std::string, Command> Commands
     {"help", Command::HELP},
 };
 
-const std::vector<std::string> Help
+const std::vector<std::string> HelpText
 {
-    "/name <name>        : Change your display name.",
-    "/who                : List users in current room.",
-    "/who <room>         : List users in specified room.",
-    "/rooms              : List rooms.",
-    "/join <room>        : Join the specified room.",
-    "/leave              : Leave the current room.",
-    "/tell <#> <message> : Send a direct message to the specified user #.",
-    "/random             : Roll a random number from 0 to 99.",
-    "/help               : Display available commands.",
+    "/name <name>            : Change your display name.",
+    "/who                    : List users in current room.",
+    "/who <room>             : List users in specified room.",
+    "/rooms                  : List rooms.",
+    "/join <room>            : Join/create the specified room.",
+    "/join <room> <password> : Join/create a password protected room.",
+    "/leave                  : Leave the current room.",
+    "/tell <#> <message>     : Send a direct message to the specified user #.",
+    "/random                 : Roll a random number from 0 to 99.",
+    "/help                   : Display available commands.",
 };
 
 class Server
@@ -65,7 +66,7 @@ class Server
         void MakeConnection(const char* port);
         void ConnectClient();
         void DisconnectClient(int client_fd, int index);
-        void AddClientToRoom(Client& client, const std::string& room);
+        void AddClientToRoom(Client& client, const std::string& room, const std::string& password = "");
         void SendToClient(const Client& client, const std::string& message) const;
         int ReceiveMessage(int client_fd, std::string& message);
         std::string GetToken(std::string& message) const;
