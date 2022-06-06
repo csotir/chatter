@@ -9,50 +9,13 @@
 #include <vector>
 
 #include "client.h"
+#include "command_handler.h"
 #include "room.h"
 
 namespace chatter {
 
 constexpr int Backlog = 10;
 constexpr int MaxDataSize = 100;
-
-enum class Command
-{
-    NAME,
-    WHO,
-    ROOMS,
-    JOIN,
-    LEAVE,
-    TELL,
-    RANDOM,
-    HELP,
-};
-
-const std::unordered_map<std::string, Command> Commands
-{
-    {"name", Command::NAME},
-    {"who", Command::WHO},
-    {"rooms", Command::ROOMS},
-    {"join", Command::JOIN},
-    {"leave", Command::LEAVE},
-    {"tell", Command::TELL},
-    {"random", Command::RANDOM},
-    {"help", Command::HELP},
-};
-
-const std::vector<std::string> HelpText
-{
-    "/name <name>            : Change your display name.",
-    "/who                    : List users in current room.",
-    "/who <room>             : List users in specified room.",
-    "/rooms                  : List rooms.",
-    "/join <room>            : Join/create the specified room.",
-    "/join <room> <password> : Join/create a password protected room.",
-    "/leave                  : Leave the current room.",
-    "/tell <#> <message>     : Send a direct message to the specified user #.",
-    "/random                 : Roll a random number from 0 to 99.",
-    "/help                   : Display available commands.",
-};
 
 class Server
 {
@@ -61,6 +24,7 @@ class Server
         void SendToServer(const std::string& message) const;
         void PollClients();
     private:
+        friend class CommandHandler;
         std::string GetClientAddr(int client_fd) const;
         void* GetInAddr(sockaddr* sa) const;
         void MakeConnection(const char* port);
@@ -69,14 +33,12 @@ class Server
         void AddClientToRoom(Client& client, const std::string& room, const std::string& password = "");
         void SendToClient(const Client& client, const std::string& message) const;
         int ReceiveMessage(int client_fd, std::string& message);
-        std::string GetToken(std::string& message) const;
-        bool SanitizeString(std::string& str, bool lower = false) const;
-        void ParseCommand(Client& client, std::string& command);
         int server_fd_;
         std::vector<pollfd> client_pfds_;
         std::unordered_map<int, Client> clients_;
         std::unordered_map<std::string, Room> rooms_;
         std::vector<char> message_buffer_;
+        CommandHandler command_handler_;
 };
 
 } // namespace chatter
