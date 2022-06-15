@@ -20,8 +20,8 @@ constexpr int MaxDataSize = 100;
 class Server
 {
     public:
-        Server(const char* port);
-        void SendToServer(const std::string& message) const;
+        Server(const char* port, bool enable_logs);
+        void SendToServer(const std::string& message);
         void PollClients();
     private:
         friend class CommandHandler;
@@ -33,7 +33,9 @@ class Server
         void AddClientToRoom(Client& client, const std::string& room, const std::string& password = "");
         void SendToClient(const Client& client, const std::string& message) const;
         int ReceiveMessage(int client_fd, std::string& message);
+        std::string GetTimestamp();
         int server_fd_;
+        bool logs_enabled_;
         std::vector<pollfd> client_pfds_;
         std::unordered_map<int, Client> clients_;
         std::unordered_map<std::string, Room> rooms_;

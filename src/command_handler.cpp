@@ -154,7 +154,8 @@ void CommandHandler::Name(Client& client, std::string& message)
     }
     if (!new_name.empty())
     {
-        std::string out = "[" + std::to_string(client.fd) + "]" + client.name + " is now known as ";
+        std::string out = server_->GetTimestamp() + "[" + std::to_string(client.fd) +
+            "]" + client.name + " is now known as ";
         client.name = new_name;
         server_->SendToClient(client, "Your new name is " + client.name + ".\r\n");
         out += client.name + ".\r\n";
@@ -218,7 +219,7 @@ void CommandHandler::Leave(Client& client)
     }
     else
     {
-        server_->AddClientToRoom(client, "global");
+        server_->AddClientToRoom(client, "global", "");
     }
 }
 
@@ -242,16 +243,16 @@ void CommandHandler::Tell(const Client& client, std::string& message) const
     {
         if (!message.empty())
         {
-            server_->SendToClient(server_->clients_.at(dest_fd), "[" +
-                std::to_string(client.fd) + "]" + client.name + "> " + message);
+            server_->SendToClient(server_->clients_.at(dest_fd), server_->GetTimestamp() +
+                "[" + std::to_string(client.fd) + "]" + client.name + "> " + message);
         }
     }
 }
 
 void CommandHandler::Random(const Client& client) const
 {
-    std::string out = "[" + std::to_string(client.fd) + "]Random! " +
-        client.name + " rolled a " + std::to_string(rand() % 100) + ".\r\n";
+    std::string out = server_->GetTimestamp() + "[" + std::to_string(client.fd) +
+        "]Random! " + client.name + " rolled a " + std::to_string(rand() % 100) + ".\r\n";
     server_->rooms_.at(client.room_name).BroadCastMessage(server_->server_fd_, out);
 }
 

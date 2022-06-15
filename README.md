@@ -17,6 +17,8 @@ make
 ./chatter <port>
 ```
 
+Add `-L` to enable logging.
+
 ## Connect
 
 ```

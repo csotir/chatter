@@ -14,7 +14,8 @@
 
 namespace chatter {
 
-Server::Server(const char* port) : message_buffer_(chatter::MaxDataSize), command_handler_(*this)
+Server::Server(const char* port, bool enable_logs)
+    : message_buffer_(chatter::MaxDataSize), command_handler_(*this), logs_enabled_(enable_logs)
 {
     srand(time(nullptr));
     MakeConnection(port);
@@ -114,9 +115,13 @@ void Server::ConnectClient()
         Client client;
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
-        SendToServer("[" + std::to_string(client.fd) + "]" + client.name + " has connected!\r\n");
+        SendToServer(GetTimestamp() + "[" + std::to_string(client.fd) +
+            "]" + client.name + " has connected!\r\n");
         SendToClient(client, "Welcome! You are #" + std::to_string(client.fd) + ".\r\n");
-        AddClientToRoom(client, "global");
+        std::string logging_notification = "Logging is ";
+        logging_notification += logs_enabled_ ? "enabled" : "disabled";
+        SendToClient(client, logging_notification + ".\r\n");
+        AddClientToRoom(client, "global", "");
         clients_.emplace(client_fd, client);
         client_pfds_.push_back({client_fd, POLLIN, 0});
         printf("New connection from %s on socket %d\r\n", client.addr.c_str(), client_fd);
@@ -128,8 +133,13 @@ void Server::DisconnectClient(int client_fd, int index)
     Client& client = clients_.at(client_fd);
     printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
-    rooms_.at(client.room_name).RemoveMember(client);
-    SendToServer("[" + std::to_string(client.fd) + "]" + client.name + " has disconnected!\r\n");
+    rooms_.at(client.room_name).RemoveMember(client, GetTimestamp());
+    if (rooms_.at(client.room_name).GetMembers().empty())
+    {
+        rooms_.erase(client.room_name);
+    }
+    SendToServer(GetTimestamp() + "[" + std::to_string(client.fd) +
+        "]" + client.name + " has disconnected!\r\n");
     client_pfds_.erase(client_pfds_.begin() + index);
     clients_.erase(client_fd);
 }
@@ -139,13 +149,17 @@ void Server::AddClientToRoom(Client& client, const std::string& room_name, const
     std::string old_room_name = client.room_name;
     if (old_room_name != room_name)
     {
-        rooms_.emplace(room_name, Room(room_name, password));
-        if (rooms_.at(room_name).AddMember(client, password))
+        // TODO: try_emplace should made this check unnecessary, but doesn't? Constructor is always called.
+        if (rooms_.find(room_name) == rooms_.end())
+        {
+            rooms_.emplace(room_name, Room(room_name, password, logs_enabled_));
+        }
+        if (rooms_.at(room_name).AddMember(client, GetTimestamp(), password))
         {
             if (old_room_name != "")
             {
                 SendToClient(client, "Leaving room: " + old_room_name + "\r\n");
-                rooms_.at(old_room_name).RemoveMember(client);
+                rooms_.at(old_room_name).RemoveMember(client, GetTimestamp());
                 if (rooms_.at(old_room_name).GetMembers().empty())
                 {
                     rooms_.erase(old_room_name);
@@ -170,9 +184,9 @@ void Server::SendToClient(const Client& client, const std::string& message) cons
     }
 }
 
-void Server::SendToServer(const std::string& message) const
+void Server::SendToServer(const std::string& message)
 {
-    for (const auto& [_, room] : rooms_)
+    for (auto& [_, room] : rooms_)
     {
         room.BroadCastMessage(server_fd_, message);
     }
@@ -208,7 +222,8 @@ void Server::PollClients()
                 {
                     if (message[0] != '/')
                     {
-                        message.insert(0, "[" + std::to_string(client.fd) + "]" + client.name + ": ");
+                        message.insert(0, GetTimestamp() + "[" +
+                            std::to_string(client.fd) + "]" + client.name + ": ");
                         rooms_.at(client.room_name).BroadCastMessage(client.fd, message);
                     }
                     else
@@ -242,6 +257,15 @@ int Server::ReceiveMessage(int client_fd, std::string& message)
         message += "\r\n";
     }
     return nbytes;
+}
+
+std::string Server::GetTimestamp()
+{
+    time_t now = time(nullptr);
+    tm* utc_time = gmtime(&now);
+    char buffer[11];
+    strftime(buffer, 11, "[%H:%M:%S]", utc_time);
+    return std::string(buffer);
 }
 
 } // namespace chatter
