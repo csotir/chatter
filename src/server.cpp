@@ -115,7 +115,7 @@ void Server::ConnectClient()
         Client client;
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
-        SendToServer(GetTimestamp() + "[" + std::to_string(client.fd) +
+        SendToAllClients(GetTimestamp() + "[" + std::to_string(client.fd) +
             "]" + client.name + " has connected!\r\n");
         SendToClient(client, "Welcome! You are #" + std::to_string(client.fd) + ".\r\n");
         std::string logging_notification = "Logging is ";
@@ -130,7 +130,7 @@ void Server::ConnectClient()
 
 void Server::DisconnectClient(int client_fd, int index)
 {
-    Client& client = clients_.at(client_fd);
+    Client client = clients_.at(client_fd);
     printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
     rooms_.at(client.room_name).RemoveMember(client, GetTimestamp());
@@ -138,10 +138,10 @@ void Server::DisconnectClient(int client_fd, int index)
     {
         rooms_.erase(client.room_name);
     }
-    SendToServer(GetTimestamp() + "[" + std::to_string(client.fd) +
-        "]" + client.name + " has disconnected!\r\n");
     client_pfds_.erase(client_pfds_.begin() + index);
     clients_.erase(client_fd);
+    SendToAllClients(GetTimestamp() + "[" + std::to_string(client.fd) +
+        "]" + client.name + " has disconnected!\r\n");
 }
 
 void Server::AddClientToRoom(Client& client, const std::string& room_name, const std::string& password)
@@ -184,11 +184,11 @@ void Server::SendToClient(const Client& client, const std::string& message) cons
     }
 }
 
-void Server::SendToServer(const std::string& message)
+void Server::SendToAllClients(const std::string& message)
 {
-    for (auto& [_, room] : rooms_)
+    for (auto& [_, client] : clients_)
     {
-        room.BroadCastMessage(server_fd_, message);
+        SendToClient(client, message);
     }
 }
 

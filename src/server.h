@@ -21,7 +21,7 @@ class Server
 {
     public:
         Server(const char* port, bool enable_logs);
-        void SendToServer(const std::string& message);
+        void SendToAllClients(const std::string& message);
         void PollClients();
     private:
         friend class CommandHandler;
