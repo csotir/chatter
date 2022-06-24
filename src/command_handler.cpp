@@ -243,8 +243,12 @@ void CommandHandler::Tell(const Client& client, std::string& message) const
     {
         if (!message.empty())
         {
-            server_->SendToClient(server_->clients_.at(dest_fd), server_->GetTimestamp() +
-                "[" + std::to_string(client.fd) + "]" + client.name + "> " + message);
+            Client& dest = server_->clients_.at(dest_fd);
+            std::string timestamp = server_->GetTimestamp();
+            server_->SendToClient(client, timestamp + ">>[" +
+                std::to_string(dest_fd) + "]" + dest.name + " : " + message);
+            server_->SendToClient(dest, timestamp + "[" +
+                std::to_string(client.fd) + "]" + client.name + ">> " + message);
         }
     }
 }

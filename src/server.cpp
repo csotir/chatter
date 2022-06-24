@@ -223,8 +223,8 @@ void Server::PollClients()
                     if (message[0] != '/')
                     {
                         message.insert(0, GetTimestamp() + "[" +
-                            std::to_string(client.fd) + "]" + client.name + ": ");
-                        rooms_.at(client.room_name).BroadCastMessage(client.fd, message);
+                            std::to_string(client.fd) + "]" + client.name + " : ");
+                        rooms_.at(client.room_name).BroadCastMessage(server_fd_, message);
                     }
                     else
                     {
