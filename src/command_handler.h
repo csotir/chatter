@@ -20,6 +20,7 @@ enum class Command
     LEAVE,
     TELL,
     RANDOM,
+    COLOR,
     HELP,
 };
 
@@ -32,6 +33,7 @@ const std::unordered_map<std::string, Command> Commands
     {"leave", Command::LEAVE},
     {"tell", Command::TELL},
     {"random", Command::RANDOM},
+    {"color", Command::COLOR},
     {"help", Command::HELP},
 };
 
@@ -46,6 +48,7 @@ const std::vector<std::string> HelpText
     "/leave                  : Leave the current room.",
     "/tell <#> <message>     : Send a direct message to the specified user #.",
     "/random                 : Roll a random number from 0 to 99.",
+    "/color                  : Toggles color display.",
     "/help                   : Display available commands.",
 };
 
@@ -64,6 +67,7 @@ class CommandHandler
         void Leave(Client& client);
         void Tell(const Client& client, std::string& message) const;
         void Random(const Client& client) const;
+        void Color(Client& client);
         void Help(const Client& client) const;
         Server* server_;
 };

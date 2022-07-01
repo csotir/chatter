@@ -1,5 +1,6 @@
 #include "command_handler.h"
 
+#include "colors.h"
 #include "server.h"
 
 namespace chatter {
@@ -49,7 +50,7 @@ void CommandHandler::ParseCommand(Client& client, std::string& message)
     std::string command = GetToken(message);
     if (!SanitizeString(command, true))
     {
-        server_->SendToClient(client, "Invalid command.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Invalid command.\r\n");
         return;
     }
 
@@ -93,6 +94,11 @@ void CommandHandler::ParseCommand(Client& client, std::string& message)
                 Random(client);
                 break;
             }
+            case Command::COLOR:
+            {
+                Color(client);
+                break;
+            }
             case Command::HELP:
             {
                 Help(client);
@@ -102,7 +108,7 @@ void CommandHandler::ParseCommand(Client& client, std::string& message)
     }
     else
     {
-        server_->SendToClient(client, "Unknown command.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Unknown command.\r\n");
     }
 }
 
@@ -112,14 +118,14 @@ void CommandHandler::Who(const Client& client, std::string& message) const
     std::string out;
     if (!SanitizeString(room_name, true))
     {
-        server_->SendToClient(client, "Invalid room name.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Invalid room name.\r\n");
         return;
     }
     if (!room_name.empty())
     {
         if (server_->rooms_.find(room_name) == server_->rooms_.end())
         {
-            server_->SendToClient(client, "Room \"" + room_name + "\" doesn't exist!\r\n");
+            server_->SendToClient(client.fd, "", chatter::colors::Red, "Room \"" + room_name + "\" doesn't exist!\r\n");
             return;
         }
         else
@@ -132,16 +138,16 @@ void CommandHandler::Who(const Client& client, std::string& message) const
         room_name = client.room_name;
     }
     out += "Members of room \"" + room_name + "\":\r\n";
-    for (auto member : server_->rooms_.at(room_name).GetMembers())
+    for (auto member_fd : server_->rooms_.at(room_name).GetMembers())
     {
-        out += "[" + std::to_string(server_->clients_.at(member).fd) + "]" + server_->clients_.at(member).name;
-        if (member == client.fd)
+        out += "[" + std::to_string(member_fd) + "]" + server_->clients_.at(member_fd).name;
+        if (member_fd == client.fd)
         {
             out += " (you)";
         }
         out += "\r\n";
     }
-    server_->SendToClient(client, out);
+    server_->SendToClient(client.fd, "", chatter::colors::None, out);
 }
 
 void CommandHandler::Name(Client& client, std::string& message)
@@ -149,21 +155,20 @@ void CommandHandler::Name(Client& client, std::string& message)
     std::string new_name = GetToken(message);
     if (!SanitizeString(new_name))
     {
-        server_->SendToClient(client, "Invalid name.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Invalid name.\r\n");
         return;
     }
     if (!new_name.empty())
     {
-        std::string out = server_->GetTimestamp() + "[" + std::to_string(client.fd) +
-            "]" + client.name + " is now known as ";
+        std::string out = "[" + std::to_string(client.fd) + "]" + client.name + " is now known as ";
         client.name = new_name;
-        server_->SendToClient(client, "Your new name is " + client.name + ".\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::None, "Your new name is " + client.name + ".\r\n");
         out += client.name + ".\r\n";
-        server_->rooms_.at(client.room_name).BroadCastMessage(client.fd, out);
+        server_->rooms_.at(client.room_name).BroadCastMessage(client.fd, chatter::colors::Yellow, out);
     }
     else
     {
-        server_->SendToClient(client, "Please specify a new name.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Please specify a new name.\r\n");
     }
 }
 
@@ -174,7 +179,7 @@ void CommandHandler::Rooms(const Client& client) const
     {
         out += room.first + " (" + std::to_string(room.second.GetMembers().size()) + ")\r\n";
     }
-    server_->SendToClient(client, out);
+    server_->SendToClient(client.fd, "", chatter::colors::None, out);
 }
 
 void CommandHandler::Join(Client& client, std::string& message)
@@ -182,14 +187,14 @@ void CommandHandler::Join(Client& client, std::string& message)
     std::string new_room = GetToken(message);
     if (!SanitizeString(new_room, true))
     {
-        server_->SendToClient(client, "Invalid room name.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Invalid room name.\r\n");
         return;
     }
     if (!new_room.empty())
     {
         if (client.room_name == new_room)
         {
-            server_->SendToClient(client, "You are already in that room.\r\n");
+            server_->SendToClient(client.fd, "", chatter::colors::Red, "You are already in that room.\r\n");
         }
         else
         {
@@ -207,7 +212,7 @@ void CommandHandler::Join(Client& client, std::string& message)
     }
     else
     {
-        server_->SendToClient(client, "Please specify a room to join.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Please specify a room to join.\r\n");
     }
 }
 
@@ -215,7 +220,7 @@ void CommandHandler::Leave(Client& client)
 {
     if (client.room_name == "global")
     {
-        server_->SendToClient(client, "You are already in the global room.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "You are already in the global room.\r\n");
     }
     else
     {
@@ -232,12 +237,12 @@ void CommandHandler::Tell(const Client& client, std::string& message) const
     }
     catch (...)
     {
-        server_->SendToClient(client, "Please enter a valid recipient number.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "Please enter a valid recipient number.\r\n");
         return;
     }
     if (server_->clients_.find(dest_fd) == server_->clients_.end())
     {
-        server_->SendToClient(client, "User #" + std::to_string(dest_fd) + " does not exist.\r\n");
+        server_->SendToClient(client.fd, "", chatter::colors::Red, "User #" + std::to_string(dest_fd) + " does not exist.\r\n");
     }
     else
     {
@@ -245,9 +250,9 @@ void CommandHandler::Tell(const Client& client, std::string& message) const
         {
             Client& dest = server_->clients_.at(dest_fd);
             std::string timestamp = server_->GetTimestamp();
-            server_->SendToClient(client, timestamp + ">>[" +
+            server_->SendToClient(client.fd, timestamp, chatter::colors::Magenta, ">>[" +
                 std::to_string(dest_fd) + "]" + dest.name + " : " + message);
-            server_->SendToClient(dest, timestamp + "[" +
+            server_->SendToClient(dest.fd, timestamp, chatter::colors::Magenta, "[" +
                 std::to_string(client.fd) + "]" + client.name + ">> " + message);
         }
     }
@@ -255,9 +260,16 @@ void CommandHandler::Tell(const Client& client, std::string& message) const
 
 void CommandHandler::Random(const Client& client) const
 {
-    std::string out = server_->GetTimestamp() + "[" + std::to_string(client.fd) +
-        "]Random! " + client.name + " rolled a " + std::to_string(rand() % 100) + ".\r\n";
-    server_->rooms_.at(client.room_name).BroadCastMessage(server_->server_fd_, out);
+    std::string out = "[" + std::to_string(client.fd) + "]Random! " + client.name +
+        " rolled " + std::to_string(rand() % 100) + ".\r\n" + chatter::colors::Reset;
+    server_->rooms_.at(client.room_name).BroadCastMessage(server_->server_fd_, chatter::colors::Yellow, out);
+}
+
+void CommandHandler::Color(Client& client)
+{
+    client.color = !client.color;
+    std::string color_display = client.color ? "enabled" : "disabled";
+    server_->SendToClient(client.fd, "", chatter::colors::None, "Color is now " + color_display + ".\r\n");
 }
 
 void CommandHandler::Help(const Client& client) const
@@ -267,7 +279,7 @@ void CommandHandler::Help(const Client& client) const
     {
         out += help_text + "\r\n";
     }
-    server_->SendToClient(client, out);
+    server_->SendToClient(client.fd, "", chatter::colors::None, out);
 }
 
 } // namespace chatter

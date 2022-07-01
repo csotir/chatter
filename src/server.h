@@ -21,8 +21,10 @@ class Server
 {
     public:
         Server(const char* port, bool enable_logs);
-        void SendToAllClients(const std::string& message);
+        void SendToClient(int client_fd, const std::string& timestamp, const char* color, const std::string& message) const;
+        void SendToAllClients(const std::string& timestamp, const std::string& message) const;
         void PollClients();
+        std::string GetTimestamp() const;
     private:
         friend class CommandHandler;
         std::string GetClientAddr(int client_fd) const;
@@ -31,9 +33,7 @@ class Server
         void ConnectClient();
         void DisconnectClient(int client_fd, int index);
         void AddClientToRoom(Client& client, const std::string& room, const std::string& password = "");
-        void SendToClient(const Client& client, const std::string& message) const;
         int ReceiveMessage(int client_fd, std::string& message);
-        std::string GetTimestamp();
         int server_fd_;
         bool logs_enabled_;
         std::vector<pollfd> client_pfds_;

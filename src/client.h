@@ -11,6 +11,7 @@ struct Client
     std::string name = "anon";
     std::string addr;
     std::string room_name;
+    bool color = true;
 };
 
 } // namespace chatter

@@ -12,6 +12,8 @@
 #include <ctime>
 #include <stdexcept>
 
+#include "colors.h"
+
 namespace chatter {
 
 Server::Server(const char* port, bool enable_logs)
@@ -115,15 +117,15 @@ void Server::ConnectClient()
         Client client;
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
-        SendToAllClients(GetTimestamp() + "[" + std::to_string(client.fd) +
+        SendToAllClients(GetTimestamp(), "[" + std::to_string(client.fd) +
             "]" + client.name + " has connected!\r\n");
-        SendToClient(client, "Welcome! You are #" + std::to_string(client.fd) + ".\r\n");
-        std::string logging_notification = "Logging is ";
-        logging_notification += logs_enabled_ ? "enabled" : "disabled";
-        SendToClient(client, logging_notification + ".\r\n");
-        AddClientToRoom(client, "global", "");
         clients_.emplace(client_fd, client);
         client_pfds_.push_back({client_fd, POLLIN, 0});
+        SendToClient(client_fd, "", chatter::colors::None, "Welcome! You are #" + std::to_string(client.fd) + ".\r\n");
+        std::string logging_notification = "Logging is ";
+        logging_notification += logs_enabled_ ? "enabled" : "disabled";
+        SendToClient(client_fd, "", chatter::colors::None, logging_notification + ".\r\n");
+        AddClientToRoom(clients_.at(client.fd), "global", "");
         printf("New connection from %s on socket %d\r\n", client.addr.c_str(), client_fd);
     }
 }
@@ -133,14 +135,14 @@ void Server::DisconnectClient(int client_fd, int index)
     Client client = clients_.at(client_fd);
     printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
     close(client_fd);
-    rooms_.at(client.room_name).RemoveMember(client, GetTimestamp());
+    rooms_.at(client.room_name).RemoveMember(client);
     if (rooms_.at(client.room_name).GetMembers().empty())
     {
         rooms_.erase(client.room_name);
     }
     client_pfds_.erase(client_pfds_.begin() + index);
     clients_.erase(client_fd);
-    SendToAllClients(GetTimestamp() + "[" + std::to_string(client.fd) +
+    SendToAllClients(GetTimestamp(), "[" + std::to_string(client.fd) +
         "]" + client.name + " has disconnected!\r\n");
 }
 
@@ -152,43 +154,54 @@ void Server::AddClientToRoom(Client& client, const std::string& room_name, const
         // TODO: try_emplace should made this check unnecessary, but doesn't? Constructor is always called.
         if (rooms_.find(room_name) == rooms_.end())
         {
-            rooms_.emplace(room_name, Room(room_name, password, logs_enabled_));
+            rooms_.emplace(room_name, Room(*this, room_name, password, logs_enabled_));
         }
-        if (rooms_.at(room_name).AddMember(client, GetTimestamp(), password))
+        if (rooms_.at(room_name).AddMember(client, password))
         {
             if (old_room_name != "")
             {
-                SendToClient(client, "Leaving room: " + old_room_name + "\r\n");
-                rooms_.at(old_room_name).RemoveMember(client, GetTimestamp());
+                SendToClient(client.fd, "", chatter::colors::None, "Leaving room: " + old_room_name + "\r\n");
+                rooms_.at(old_room_name).RemoveMember(client);
                 if (rooms_.at(old_room_name).GetMembers().empty())
                 {
                     rooms_.erase(old_room_name);
                 }
             }
             client.room_name = room_name;
-            SendToClient(client, "Joined room: " + room_name + "\r\n");
+            SendToClient(client.fd, "", chatter::colors::None, "Joined room: " + room_name + "\r\n");
         }
         else
         {
-            SendToClient(client, "Incorrect password!\r\n");
+            SendToClient(client.fd, "", chatter::colors::Red, "Incorrect password!\r\n");
         }
         
     }
 }
 
-void Server::SendToClient(const Client& client, const std::string& message) const
+void Server::SendToClient(int client_fd, const std::string& timestamp, const char* color, const std::string& message) const
 {
-    if (send(client.fd, message.c_str(), message.size(), 0) == -1)
+    std::string out = timestamp;
+    const Client& client = clients_.at(client_fd);
+    if (client.color)
+    {
+        out += color;
+    }
+    out += message;
+    if (client.color)
+    {
+        out += chatter::colors::Reset;
+    }
+    if (send(client.fd, out.c_str(), out.size(), 0) == -1)
     {
         perror("send");
     }
 }
 
-void Server::SendToAllClients(const std::string& message)
+void Server::SendToAllClients(const std::string& timestamp, const std::string& message) const
 {
     for (auto& [_, client] : clients_)
     {
-        SendToClient(client, message);
+        SendToClient(client.fd, timestamp, chatter::colors::None, message);
     }
 }
 
@@ -222,9 +235,8 @@ void Server::PollClients()
                 {
                     if (message[0] != '/')
                     {
-                        message.insert(0, GetTimestamp() + "[" +
-                            std::to_string(client.fd) + "]" + client.name + " : ");
-                        rooms_.at(client.room_name).BroadCastMessage(server_fd_, message);
+                        message.insert(0, "[" + std::to_string(client.fd) + "]" + client.name + " : ");
+                        rooms_.at(client.room_name).BroadCastMessage(server_fd_, chatter::colors::Cyan, message);
                     }
                     else
                     {
@@ -259,7 +271,7 @@ int Server::ReceiveMessage(int client_fd, std::string& message)
     return nbytes;
 }
 
-std::string Server::GetTimestamp()
+std::string Server::GetTimestamp() const
 {
     time_t now = time(nullptr);
     tm* utc_time = gmtime(&now);
