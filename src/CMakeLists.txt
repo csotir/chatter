@@ -1,2 +1,7 @@
+if(MSVC)
+    link_libraries(WS2_32)
+endif()
 add_executable(chatter chatter.cpp server.cpp room.cpp command_handler.cpp)
 set_target_properties(chatter PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}")
+set_target_properties(chatter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}")
+set_target_properties(chatter PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}")

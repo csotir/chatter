@@ -1,6 +1,5 @@
 #include "room.h"
 
-#include <sys/socket.h>
 #include <ctime>
 
 #include <cstdio>
@@ -42,7 +41,7 @@ void Room::RemoveMember(const Client& client)
         "]" + client.name + " has left the room!\r\n");
 }
 
-void Room::BroadCastMessage(int sender_fd, const char* color, const std::string& message)
+void Room::BroadCastMessage(sock_t sender_fd, const char* color, const std::string& message)
 {
     std::string timestamp = server_->GetTimestamp();
     if (log_file_.is_open())

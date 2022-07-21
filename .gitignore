@@ -1,4 +1,10 @@
 .vscode/
+.vs/
 build/
+
+*.exe
+*.pdb
+*.ilk
+
 logs/
 chatter

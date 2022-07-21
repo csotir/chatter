@@ -1,10 +1,13 @@
 #include "server.h"
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <unistd.h>
+#ifndef _WIN32
+    #include <arpa/inet.h>
+    #include <sys/ioctl.h>
+    #include <netdb.h>
+    #include <netinet/in.h>
+    #include <unistd.h>
+    constexpr int INVALID_SOCKET = -1;
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -19,11 +22,18 @@ namespace chatter {
 Server::Server(const char* port, bool enable_logs)
     : message_buffer_(chatter::MaxDataSize), command_handler_(*this), logs_enabled_(enable_logs)
 {
-    srand(time(nullptr));
+    srand(static_cast<unsigned int>(time(nullptr)));
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
+        fprintf(stderr, "WSAStartup failed.\r\n");
+        exit(EXIT_FAILURE);
+    }
+#endif
     MakeConnection(port);
 }
 
-std::string Server::GetClientAddr(int client_fd) const
+std::string Server::GetClientAddr(sock_t client_fd) const
 {
     char addr_buffer[INET6_ADDRSTRLEN];
     sockaddr_storage client_addr;
@@ -66,17 +76,17 @@ void Server::MakeConnection(const char* port)
     int yes = 1;
     for (p = servinfo; p != nullptr; p = p->ai_next)
     {
-        if ((server_fd_ = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        if ((server_fd_ = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == INVALID_SOCKET)
         {
             perror("chatter-server: socket");
             continue;
         }
-        if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&yes), sizeof(int)) == -1)
         {
             perror("setsockopt");
             exit(EXIT_FAILURE);
         }
-        if (bind(server_fd_, p->ai_addr, p->ai_addrlen) == -1)
+        if (bind(server_fd_, p->ai_addr, static_cast<int>(p->ai_addrlen)) == -1)
         {
             close(server_fd_);
             perror("chatter-server: bind");
@@ -106,14 +116,15 @@ void Server::ConnectClient()
 {
     sockaddr_storage client_addr;
     socklen_t addr_size = sizeof client_addr;
-    int client_fd = accept(server_fd_, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
-    if (client_fd == -1)
+    sock_t client_fd = accept(server_fd_, reinterpret_cast<sockaddr*>(&client_addr), &addr_size);
+    if (client_fd == INVALID_SOCKET)
     {
         perror("chatter-server: accept");
     }
     else
     {
-        fcntl(client_fd, F_SETFL, O_NONBLOCK);
+        unsigned long int yes = 1;
+        ioctl(client_fd, FIONBIO, &yes);
         Client client;
         client.fd = client_fd;
         client.addr = GetClientAddr(client_fd);
@@ -126,14 +137,14 @@ void Server::ConnectClient()
         logging_notification += logs_enabled_ ? "enabled" : "disabled";
         SendToClient(client_fd, "", chatter::colors::None, logging_notification + ".\r\n");
         AddClientToRoom(clients_.at(client.fd), "global", "");
-        printf("New connection from %s on socket %d\r\n", client.addr.c_str(), client_fd);
+        printf("New connection from %s on socket %d\r\n", client.addr.c_str(), static_cast<int>(client_fd));
     }
 }
 
-void Server::DisconnectClient(int client_fd, int index)
+void Server::DisconnectClient(sock_t client_fd, size_t index)
 {
     Client client = clients_.at(client_fd);
-    printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), client_fd);
+    printf("Disconnected %s from socket %d\r\n", client.addr.c_str(), static_cast<int>(client_fd));
     close(client_fd);
     rooms_.at(client.room_name).RemoveMember(client);
     if (rooms_.at(client.room_name).GetMembers().empty())
@@ -178,7 +189,7 @@ void Server::AddClientToRoom(Client& client, const std::string& room_name, const
     }
 }
 
-void Server::SendToClient(int client_fd, const std::string& timestamp, const char* color, const std::string& message) const
+void Server::SendToClient(sock_t client_fd, const std::string& timestamp, const char* color, const std::string& message) const
 {
     std::string out = timestamp;
     const Client& client = clients_.at(client_fd);
@@ -191,7 +202,7 @@ void Server::SendToClient(int client_fd, const std::string& timestamp, const cha
     {
         out += chatter::colors::Reset;
     }
-    if (send(client.fd, out.c_str(), out.size(), 0) == -1)
+    if (send(client.fd, out.c_str(), static_cast<int>(out.size()), 0) == -1)
     {
         perror("send");
     }
@@ -214,7 +225,7 @@ void Server::PollClients()
         exit(EXIT_FAILURE);
     }
 
-    for (int i = 0; i < client_pfds_.size();)
+    for (size_t i = 0; i < client_pfds_.size();)
     {
         if (client_pfds_[i].revents & POLLIN)
         {
@@ -250,11 +261,11 @@ void Server::PollClients()
     }
 }
 
-int Server::ReceiveMessage(int client_fd, std::string& message)
+int Server::ReceiveMessage(sock_t client_fd, std::string& message)
 {
     int nbytes;
     memset(&message_buffer_[0], 0, chatter::MaxDataSize);
-    while ((nbytes = recv(client_fd, &message_buffer_[0], message_buffer_.size(), 0)) != -1)
+    while ((nbytes = recv(client_fd, &message_buffer_[0], static_cast<int>(message_buffer_.size()), 0)) != -1)
     {
         if (nbytes == 0)
         {

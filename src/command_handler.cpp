@@ -8,7 +8,7 @@ namespace chatter {
 std::string CommandHandler::GetToken(std::string& message) const
 {
     std::string ret;
-    int pos = 0;
+    size_t pos = 0;
     while (ret.empty() && (pos = message.find(' ')) != std::string::npos)
     {
         ret += message.substr(0, pos);
@@ -24,7 +24,7 @@ std::string CommandHandler::GetToken(std::string& message) const
 
 bool CommandHandler::SanitizeString(std::string& str, bool lower) const
 {
-    for (int i = 0; i < str.size();)
+    for (size_t i = 0; i < str.size();)
     {
         if (str[i] < 32)
         {
